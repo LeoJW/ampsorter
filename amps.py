@@ -2,6 +2,8 @@
 # Assited Motor Program Sorter (or Muscle Potential Sorter)
 import json
 import os
+import scipy.io
+import numpy as np
 from PyQt6 import QtCore, QtWidgets, QtGui, uic
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QIcon
@@ -28,7 +30,7 @@ class TrialListModel(QtCore.QAbstractListModel):
         return len(self.trials)
 
 class MuscleTableModel(QtCore.QAbstractTableModel):
-    def __init__(self, data):
+    def __init__(self, data=[[[]]]):
         super(MuscleTableModel, self).__init__()
         self._data = data
         self.selected_trial_index = 0
@@ -46,6 +48,8 @@ class MuscleTableModel(QtCore.QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             return self._data[self.selected_trial_index][index.row()][index.column()]
 
+# TODO: Model for spike times + units(?) + invalidated + waveforms
+
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -53,13 +57,23 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         Ui_MainWindow.__init__(self)
         self.setupUi(self)
         self.trialListModel = TrialListModel()
-        # TODO: better initialization practice this seems dumb
-        self.muscleTableModel = MuscleTableModel([[[]]]) 
-        self.load()
+        self.muscleTableModel = MuscleTableModel() 
         self.trialView.setModel(self.trialListModel)
         self.muscleView.setModel(self.muscleTableModel)
+        self.path_data = os.path.dirname(os.path.abspath(__file__))
+        self.path_amps = os.path.dirname(os.path.abspath(__file__))
+        # Traces plot
+        self.traceData = np.zeros((200000, 11))
+        self.traces = [self.traceView.plot([0],[0]) for i in range(10)]
+        for i in range(10):
+            self.traces[i].setDownsampling(ds=1, auto=True, method='subsample')
+        self.traceView.showAxis('left', False)
+        
+        # for i in range(10):
+        #     obj = self.traceView.plot([0],[0])
+        #     self.traces.append(obj)
         # Connect the selection change in QListView to update the model
-        self.trialView.selectionModel().currentChanged.connect(self.updateSelectedIndex)
+        self.trialView.selectionModel().currentChanged.connect(self.trialSelectionChanged)
         # self.trialView.clicked.connect(self.trial_clicked)
         self.muscleView.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
@@ -78,12 +92,28 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         file_menu.addSeparator()
         file_menu.addAction(load_action)
     
-    def updateSelectedIndex(self, current, previous):
+    def update_traceView_plot(self):
+        for i in np.arange(1,11):
+            self.traces[i-1].setData(self.traceData[:,0], self.traceData[:,i] + i)
+            # self.traceView.plot(self.traceData[:,0], self.traceData[:,i] + i)
+    
+    def trialSelectionChanged(self, current, previous):
         self.muscleTableModel.setSelectedIndex(current.row())
+        # Retrieve selected trial's data 
+        trial_name = self.trialListModel.trials[current.row()][1]
+        fname = os.path.join(self.path_data, trial_name)
+        file = scipy.io.loadmat(fname)
+        # Grab data
+        datamat = file[trial_name[0:-4]][:,0:11]
+        # Normalize to amplitude of 1 before saving
+        datamat[:,1:] = datamat[:,1:] / (datamat[:,1:].max(axis=0) - datamat[:,1:].min(axis=0))
+        self.traceData = datamat
+        # Update traceView plot
+        self.update_traceView_plot()
     
     def onFileOpenClick(self, s):
-        dir_path = QFileDialog.getExistingDirectory(
-            self, "Open Data Folder", "~")
+        dir_path = QFileDialog.getExistingDirectory(self, "Open Data Folder", "~")
+        self.path_data = dir_path
         # TODO: db can save in location of app for now, but set name 
         # dynamic to moth file. 
         
@@ -91,14 +121,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         
         dir_contents = os.listdir(dir_path)
         # make dir for contents if none exists
-        # if 'amps' not in dir_contents:
-        # db_path = os.path.join(dir_path, 'amps')
-        # os.mkdir(db_path)
+        if 'amps' not in dir_contents:
+            self.path_amps = os.path.join(dir_path, 'amps')
+            os.mkdir(self.path_amps)
         
         # Go to dir and grab list of trials
         trial_names = [f for f in dir_contents
-                if 'FT' in f
                 if '.mat' in f 
+                if 'FT' not in f
                 if 'Control' not in f
                 if 'quiet' not in f
                 if 'empty' not in f]
@@ -119,7 +149,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def load(self):
         try:
-            with open('data.db', 'r') as f:
+            with open(os.path.join(self.path_amps, 'params.db'), 'r') as f:
                 data = json.load(f)
                 self.trialListModel.trials = data['trialListModel']
                 self.muscleTableModel._data = data['muscleTableModel']
@@ -128,7 +158,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         except Exception:
             pass
     def save(self):
-        with open('data.db', 'w') as f:
+        with open(os.path.join(self.path_amps, 'params.db'), 'w') as f:
             data = {
                 'trialListModel' : self.trialListModel.trials,
                 'muscleTableModel' : self.muscleTableModel._data
