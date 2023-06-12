@@ -18,6 +18,10 @@ import pyqtgraph as pg
 qt_creator_file = "mainwindow.ui"
 Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
 
+# Could set up to instead get names from files themselves
+# Premature optimization is the root of all evil, though
+muscleNames = ['lax','lba','lsa','ldvm','ldlm','rdlm','rdvm','rsa','rba','rax']
+
 class TrialListModel(QtCore.QAbstractListModel):
     def __init__(self, *args, trials=None, **kwargs):
         super(TrialListModel, self). __init__(*args, **kwargs)
@@ -63,18 +67,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.path_data = os.path.dirname(os.path.abspath(__file__))
         self.path_amps = os.path.dirname(os.path.abspath(__file__))
         # Traces plot
-        self.traceData = np.zeros((200000, 11))
-        self.traces = [self.traceView.plot([0],[0]) for i in range(10)]
-        for i in range(10):
+        self.traceData = {}#np.zeros((200000, 11))
+        self.traces = []
+        for i,m in enumerate(muscleNames):
+            self.traceData[m] = np.zeros((200000,1))
+            self.traces.append(self.traceView.plot([0],[0]))
             self.traces[i].setDownsampling(ds=1, auto=True, method='subsample')
         self.traceView.showAxis('left', False)
         
-        # for i in range(10):
-        #     obj = self.traceView.plot([0],[0])
-        #     self.traces.append(obj)
         # Connect the selection change in QListView to update the model
         self.trialView.selectionModel().currentChanged.connect(self.trialSelectionChanged)
-        # self.trialView.clicked.connect(self.trial_clicked)
+        self.muscleView.selectionModel().currentChanged.connect(self.muscleSelectionChanged)
         self.muscleView.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
         #--- File menu 
@@ -92,10 +95,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         file_menu.addSeparator()
         file_menu.addAction(load_action)
     
-    def update_traceView_plot(self):
+    def updateTraceViewPlot(self):
         for i in np.arange(1,11):
             self.traces[i-1].setData(self.traceData[:,0], self.traceData[:,i] + i)
-            # self.traceView.plot(self.traceData[:,0], self.traceData[:,i] + i)
+    
+    def muscleSelectionChanged(self, current, previous):
+        print(self.muscleView.selectionModel().selectedRows()[0].row())
+        
     
     def trialSelectionChanged(self, current, previous):
         self.muscleTableModel.setSelectedIndex(current.row())
@@ -107,9 +113,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         datamat = file[trial_name[0:-4]][:,0:11]
         # Normalize to amplitude of 1 before saving
         datamat[:,1:] = datamat[:,1:] / (datamat[:,1:].max(axis=0) - datamat[:,1:].min(axis=0))
-        self.traceData = datamat
+        # Get indices corresponding to each muscle name, save data
+        channelNames = [column[0].lower() for column in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
+        muscleIndices = [channelNames.index(item) for item in muscleNames]
+        for m in muscleNames:
+            self.traceData[m] = datamat
+        # self.traceData = datamat
         # Update traceView plot
-        self.update_traceView_plot()
+        # self.updateTraceViewPlot()
     
     def onFileOpenClick(self, s):
         dir_path = QFileDialog.getExistingDirectory(self, "Open Data Folder", "~")
@@ -135,8 +146,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         trial_nums = [f[-7:-4] for f in trial_names]
         trials = sorted(zip(trial_nums, trial_names))
         # Generate fresh (muscle, nspike) matrix
-        muscles = ['lax','lba','lsa','ldvm','ldlm','rdlm','rdvm','rsa','rba','rax']
-        muscle_table = [[[m, i] for m in muscles] for i in range(len(trials))]
+        muscle_table = [[[m, i] for m in muscleNames] for i in range(len(trials))]
         self.trialListModel.trials = trials
         self.muscleTableModel._data = muscle_table
         self.save()
