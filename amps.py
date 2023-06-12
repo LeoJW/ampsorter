@@ -9,7 +9,9 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
     QFileDialog,
-    QHeaderView
+    QHeaderView,
+    QStyledItemDelegate,
+    QTableView
 )
 from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
@@ -29,6 +31,25 @@ muscleColors = {
     "ldvm": "#66AFE6", "rdvm": "#2A4A78",
     "ldlm": "#E87D7A", "rdlm": "#C14434"
 }
+
+class CustomItemDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        # Adjust the rectangle used for painting based on the desired spacing
+        spacing = 1  # Adjust this value as per your needs
+        rect = option.rect.adjusted(0, spacing, 0, -spacing)
+
+        # Call the base paint() method with the adjusted rectangle
+        super().paint(painter, option, index)
+
+    def sizeHint(self, option, index):
+        # Get the base size hint from the delegate
+        size_hint = super().sizeHint(option, index)
+
+        # Adjust the height based on the desired spacing
+        spacing = 1  # Adjust this value as per your needs
+        size_hint.setHeight(size_hint.height() + (2 * spacing))
+
+        return size_hint
 
 class TrialListModel(QtCore.QAbstractListModel):
     def __init__(self, *args, trials=None, **kwargs):
@@ -69,6 +90,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         QtWidgets.QMainWindow.__init__(self)
         Ui_MainWindow.__init__(self)
         self.setupUi(self)
+        # self.muscleView.setItemDelegate(CustomItemDelegate())
         self.trialListModel = TrialListModel()
         self.muscleTableModel = MuscleTableModel() 
         self.trialView.setModel(self.trialListModel)

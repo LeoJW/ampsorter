@@ -15,6 +15,9 @@
   </property>
   <widget class="QWidget" name="widget">
    <layout class="QGridLayout" name="gridLayout">
+    <property name="horizontalSpacing">
+     <number>0</number>
+    </property>
     <item row="0" column="2">
      <widget class="QTableView" name="muscleView">
       <property name="sizePolicy">
@@ -23,15 +26,21 @@
         <verstretch>0</verstretch>
        </sizepolicy>
       </property>
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>220</height>
+       </size>
+      </property>
       <property name="maximumSize">
        <size>
-        <width>100</width>
-        <height>200</height>
+        <width>60</width>
+        <height>240</height>
        </size>
       </property>
       <property name="font">
        <font>
-        <pointsize>10</pointsize>
+        <pointsize>11</pointsize>
        </font>
       </property>
       <property name="alternatingRowColors">
@@ -45,6 +54,12 @@
       </attribute>
       <attribute name="verticalHeaderVisible">
        <bool>false</bool>
+      </attribute>
+      <attribute name="verticalHeaderDefaultSectionSize">
+       <number>7</number>
+      </attribute>
+      <attribute name="verticalHeaderMinimumSectionSize">
+       <number>5</number>
       </attribute>
      </widget>
     </item>
@@ -69,10 +84,16 @@
         <verstretch>0</verstretch>
        </sizepolicy>
       </property>
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>220</height>
+       </size>
+      </property>
       <property name="maximumSize">
        <size>
         <width>50</width>
-        <height>200</height>
+        <height>240</height>
        </size>
       </property>
       <property name="selectionMode">
