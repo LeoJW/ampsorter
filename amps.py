@@ -24,6 +24,7 @@ Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
 # Premature optimization is the root of all evil, though
 muscleNames = ['lax','lba','lsa','ldvm','ldlm','rdlm','rdvm','rsa','rba','rax']
 viewEnableColor = '#73A843'
+highlightColor = '#EEEEEE'
 muscleColors = {
     "lax" : "#94D63C", "rax" : "#6A992A",
     "lba" : "#AE3FC3", "rba" : "#7D2D8C",
@@ -31,25 +32,6 @@ muscleColors = {
     "ldvm": "#66AFE6", "rdvm": "#2A4A78",
     "ldlm": "#E87D7A", "rdlm": "#C14434"
 }
-
-class CustomItemDelegate(QStyledItemDelegate):
-    def paint(self, painter, option, index):
-        # Adjust the rectangle used for painting based on the desired spacing
-        spacing = 1  # Adjust this value as per your needs
-        rect = option.rect.adjusted(0, spacing, 0, -spacing)
-
-        # Call the base paint() method with the adjusted rectangle
-        super().paint(painter, option, index)
-
-    def sizeHint(self, option, index):
-        # Get the base size hint from the delegate
-        size_hint = super().sizeHint(option, index)
-
-        # Adjust the height based on the desired spacing
-        spacing = 1  # Adjust this value as per your needs
-        size_hint.setHeight(size_hint.height() + (2 * spacing))
-
-        return size_hint
 
 class TrialListModel(QtCore.QAbstractListModel):
     def __init__(self, *args, trials=None, **kwargs):
@@ -103,9 +85,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         for i,m in enumerate(muscleNames):
             pen = pg.mkPen(color=muscleColors[m])
             self.traceData[m] = np.zeros((200000))
-            self.traces.append(self.traceView.plot([0],[0], pen=pen))
+            self.traces.append(self.traceView.plot([0],[0], pen=pen, name=m))
+            self.traces[i].setCurveClickable(True)
+            self.traces[i].sigClicked.connect(self.traceClicked)
+            self.traces[i].curve.metaData = m
             self.traces[i].setDownsampling(ds=1, auto=True, method='subsample')
-        
+        self.activeIndex = 0
         # Connect the selection change in QListView to update the model
         self.trialView.selectionModel().currentChanged.connect(self.trialSelectionChanged)
         self.muscleView.selectionModel().selectionChanged.connect(self.updateTraceViewPlot)
@@ -126,6 +111,18 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         file_menu.addSeparator()
         file_menu.addAction(load_action)
     
+    def setActiveTrace(self, index):
+        prev = self.activeIndex
+        # Change prev color back
+        self.traces[prev].setPen(pg.mkPen(color=muscleColors[muscleNames[prev]]))
+        # Set new selection to highlight color
+        self.traces[index].setPen(pg.mkPen(color=highlightColor))
+        self.activeIndex = index
+    
+    def traceClicked(self, evt):
+        selectedMuscle = evt.curve.metaData
+        self.setActiveTrace(muscleNames.index(selectedMuscle))
+        
     def updateTraceViewPlot(self):
         selectedRowIndices = [item.row() for item in self.muscleView.selectionModel().selectedRows()]
         unselectedRowIndices = [i for i in set(range(len(muscleNames))) if i not in selectedRowIndices]
