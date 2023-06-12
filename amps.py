@@ -22,6 +22,13 @@ Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
 # Premature optimization is the root of all evil, though
 muscleNames = ['lax','lba','lsa','ldvm','ldlm','rdlm','rdvm','rsa','rba','rax']
 viewEnableColor = '#73A843'
+muscleColors = {
+    "lax" : "#94D63C", "rax" : "#6A992A",
+    "lba" : "#AE3FC3", "rba" : "#7D2D8C",
+    "lsa" : "#FFBE24", "rsa" : "#E7AC1E",
+    "ldvm": "#66AFE6", "rdvm": "#2A4A78",
+    "ldlm": "#E87D7A", "rdlm": "#C14434"
+}
 
 class TrialListModel(QtCore.QAbstractListModel):
     def __init__(self, *args, trials=None, **kwargs):
@@ -72,10 +79,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.traces = []
         self.traceData = {'time' : np.zeros((200000, 1))}
         for i,m in enumerate(muscleNames):
+            pen = pg.mkPen(color=muscleColors[m])
             self.traceData[m] = np.zeros((200000))
-            self.traces.append(self.traceView.plot([0],[0]))
+            self.traces.append(self.traceView.plot([0],[0], pen=pen))
             self.traces[i].setDownsampling(ds=1, auto=True, method='subsample')
-        self.traceView.showAxis('left', False)
         
         # Connect the selection change in QListView to update the model
         self.trialView.selectionModel().currentChanged.connect(self.trialSelectionChanged)
@@ -106,14 +113,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Clear unselected traces
         for ind in unselectedRowIndices:
             self.traces[ind].setData([0],[0])
+        # Update Y axis
+        yax = self.traceView.getAxis('left')
+        yax.setTicks([[(i, muscleNames[j]) for i,j in enumerate(selectedRowIndices)],[]])
         
-    
-    def muscleSelectionChanged(self, current, previous):
-        # print(f'current: {current.row()}')
-        # print(f'previous: {previous.row()}')
-        # self.muscleTableModel._data[]
-        # self._data[self.selected_trial_index][index.row()][-1]
-        self.updateTraceViewPlot()
     
     def trialSelectionChanged(self, current, previous):
         self.muscleTableModel.setSelectedIndex(current.row())
@@ -166,7 +169,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # self.load()
         # else:
             # Load contents that already exist
-            
     
     def load(self):
         try:
