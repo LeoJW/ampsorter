@@ -9,9 +9,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
     QFileDialog,
-    QHeaderView,
-    QStyledItemDelegate,
-    QTableView
+    QHeaderView
 )
 from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
@@ -66,32 +64,31 @@ class MuscleTableModel(QtCore.QAbstractTableModel):
 
 # TODO: Model for spike times + units(?) + invalidated + waveforms
 
-
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def __init__(self):
         QtWidgets.QMainWindow.__init__(self)
         Ui_MainWindow.__init__(self)
         self.setupUi(self)
-        # self.muscleView.setItemDelegate(CustomItemDelegate())
+        
         self.trialListModel = TrialListModel()
         self.muscleTableModel = MuscleTableModel() 
         self.trialView.setModel(self.trialListModel)
         self.muscleView.setModel(self.muscleTableModel)
-        self.path_data = os.path.dirname(os.path.abspath(__file__))
-        self.path_amps = os.path.dirname(os.path.abspath(__file__))
+        self._path_data = os.path.dirname(os.path.abspath(__file__))
+        self._path_amps = os.path.dirname(os.path.abspath(__file__))
         # Traces plot
+        self._activeIndex = 0
         self.traces = []
         self.traceData = {'time' : np.zeros((200000, 1))}
         for i,m in enumerate(muscleNames):
             pen = pg.mkPen(color=muscleColors[m])
             self.traceData[m] = np.zeros((200000))
             self.traces.append(self.traceView.plot([0],[0], pen=pen, name=m))
-            self.traces[i].setCurveClickable(True)
-            self.traces[i].sigClicked.connect(self.traceClicked)
             self.traces[i].curve.metaData = m
             self.traces[i].setDownsampling(ds=1, auto=True, method='subsample')
-        self.activeIndex = 0
-        # Connect the selection change in QListView to update the model
+            self.traces[i].setCurveClickable(True)
+            self.traces[i].sigClicked.connect(self.traceClicked)
+        # Connect callback functions for changing selections
         self.trialView.selectionModel().currentChanged.connect(self.trialSelectionChanged)
         self.muscleView.selectionModel().selectionChanged.connect(self.updateTraceViewPlot)
         self.muscleView.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -102,9 +99,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         open_action.setStatusTip("Open a new folder of data")
         open_action.triggered.connect(self.onFileOpenClick)
         
-        load_action = QAction("Load", self)
-        load_action.setStatusTip("Load previous spike sorting")
-        load_action.triggered.connect(self.onFileOpenClick)
+        load_action = QAction("Load last session", self)
+        load_action.setStatusTip("Load previous spike sorting session")
+        load_action.triggered.connect(self.onLoadPreviousClick)
         
         file_menu = menu.addMenu("File")
         file_menu.addAction(open_action)
@@ -112,12 +109,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         file_menu.addAction(load_action)
     
     def setActiveTrace(self, index):
-        prev = self.activeIndex
+        prev = self._activeIndex
         # Change prev color back
         self.traces[prev].setPen(pg.mkPen(color=muscleColors[muscleNames[prev]]))
         # Set new selection to highlight color
         self.traces[index].setPen(pg.mkPen(color=highlightColor))
-        self.activeIndex = index
+        self._activeIndex = index
     
     def traceClicked(self, evt):
         selectedMuscle = evt.curve.metaData
@@ -141,7 +138,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.muscleTableModel.setSelectedIndex(current.row())
         # Retrieve selected trial's data 
         trial_name = self.trialListModel.trials[current.row()][1]
-        fname = os.path.join(self.path_data, trial_name)
+        fname = os.path.join(self._path_data, trial_name)
         file = scipy.io.loadmat(fname)
         # Grab data
         datamat = file[trial_name[0:-4]][:,0:11]
@@ -156,42 +153,47 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.updateTraceViewPlot()
     
     def onFileOpenClick(self, s):
-        dir_path = QFileDialog.getExistingDirectory(self, "Open Data Folder", "~")
-        self.path_data = dir_path
-        # TODO: db can save in location of app for now, but set name 
-        # dynamic to moth file. 
-        
-        # TODO: logic to only do this if nothing open
-        
-        dir_contents = os.listdir(dir_path)
-        # make dir for contents if none exists
+        self._path_data = QFileDialog.getExistingDirectory(self, "Open Data Folder", "~")
+        # TODO: logic to only do this if nothing open(?)
+        self.initializeDataDir()
+    
+    def onLoadPreviousClick(self, s):
+        # Get paths, core variables from QSettings
+        settings = QtCore.QSettings('AgileSystemsLab', 'amps')
+        self._path_data, self._path_amps = settings.value('last_paths', [], str)
+        # Use those paths to populate app
+        self.initializeDataDir()
+    
+    def initializeDataDir(self):
+        dir_contents = os.listdir(self._path_data)
+        self._path_amps = os.path.join(self._path_data, 'amps')
+        # If no dir for amps in data dir
+        # Make one, read contents of data, populate app
         if 'amps' not in dir_contents:
-            self.path_amps = os.path.join(dir_path, 'amps')
-            os.mkdir(self.path_amps)
-        
-        # Go to dir and grab list of trials
-        trial_names = [f for f in dir_contents
-                if '.mat' in f 
-                if 'FT' not in f
-                if 'Control' not in f
-                if 'quiet' not in f
-                if 'empty' not in f]
-        trial_nums = [f[-7:-4] for f in trial_names]
-        trials = sorted(zip(trial_nums, trial_names))
-        # Generate fresh (muscle, nspike) matrix
-        muscle_table = [[[m, i, False] for m in muscleNames] for i in range(len(trials))]
-        self.trialListModel.trials = trials
-        self.muscleTableModel._data = muscle_table
-        self.save()
-        self.trialListModel.layoutChanged.emit()
-        self.muscleTableModel.layoutChanged.emit()
-        # self.load()
-        # else:
-            # Load contents that already exist
+            os.mkdir(self._path_amps)
+            # Grab list of trials
+            trial_names = [f for f in dir_contents
+                    if '.mat' in f 
+                    if 'FT' not in f
+                    if 'Control' not in f
+                    if 'quiet' not in f
+                    if 'empty' not in f]
+            trial_nums = [f[-7:-4] for f in trial_names]
+            trials = sorted(zip(trial_nums, trial_names))
+            # Generate fresh (muscle, nspike) matrix
+            muscle_table = [[[m, i, False] for m in muscleNames] for i in range(len(trials))]
+            self.trialListModel.trials = trials
+            self.muscleTableModel._data = muscle_table
+            self.save()
+            self.trialListModel.layoutChanged.emit()
+            self.muscleTableModel.layoutChanged.emit()
+        # If there is amps dir, load that data
+        else: 
+            self.load()
     
     def load(self):
         try:
-            with open(os.path.join(self.path_amps, 'params.db'), 'r') as f:
+            with open(os.path.join(self._path_amps, 'params.db'), 'r') as f:
                 data = json.load(f)
                 self.trialListModel.trials = data['trialListModel']
                 self.muscleTableModel._data = data['muscleTableModel']
@@ -200,7 +202,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         except Exception:
             pass
     def save(self):
-        with open(os.path.join(self.path_amps, 'params.db'), 'w') as f:
+        with open(os.path.join(self._path_amps, 'params.db'), 'w') as f:
             data = {
                 'trialListModel' : self.trialListModel.trials,
                 'muscleTableModel' : self.muscleTableModel._data
@@ -209,6 +211,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def trial_clicked(self, index):
         indexes = self.trialView.selectedIndexes()
+    
+    # Execute on app close
+    def closeEvent(self, event):
+        settings = QtCore.QSettings('AgileSystemsLab', 'amps')
+        settings.setValue('last_paths', [self._path_data, self._path_amps])
 
 
 app = QtWidgets.QApplication([])
