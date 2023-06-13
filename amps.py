@@ -13,6 +13,8 @@ from PyQt6.QtWidgets import (
 )
 from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
+from settingsDialog import *
+
 
 
 qt_creator_file = "mainwindow.ui"
@@ -88,12 +90,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.traces[i].setDownsampling(ds=1, auto=True, method='subsample')
             self.traces[i].setCurveClickable(True)
             self.traces[i].sigClicked.connect(self.traceClicked)
+        infline = pg.InfiniteLine(pos=1, angle=0, movable=True)
+        self.traceView.addItem(infline)
+        
         # Connect callback functions for changing selections
         self.trialView.selectionModel().currentChanged.connect(self.trialSelectionChanged)
         self.muscleView.selectionModel().selectionChanged.connect(self.updateTraceViewPlot)
         self.muscleView.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-
-        #--- File menu 
+        
+        #--- Top toolbar menus
         menu = self.menuBar()
         open_action = QAction("Open", self)
         open_action.setStatusTip("Open a new folder of data")
@@ -103,10 +108,26 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         load_action.setStatusTip("Load previous spike sorting session")
         load_action.triggered.connect(self.onLoadPreviousClick)
         
+        settings_action = QAction("Preferences", self)
+        settings_action.setStatusTip("Open window with advanced and extended settings")
+        settings_action.triggered.connect(self.onSettingsClick)
+        
         file_menu = menu.addMenu("File")
+        settings_menu = menu.addMenu("Preferences")
+        # Note: naming the settings_menu and settings_action the same name 
+        # seems to trigger moving it to the more official Python > Preferences (Cmd + ,)
+        # location. Not sure why, but it's nice so I'm leaving it
         file_menu.addAction(open_action)
         file_menu.addSeparator()
         file_menu.addAction(load_action)
+        settings_menu.addAction(settings_action)
+        settings_menu.addSeparator()
+        
+        #--- Settings dialog
+        self.settingsDialog = SettingsDialog(self)
+        
+    def onSettingsClick(self):
+        self.settingsDialog.exec()
     
     def setActiveTrace(self, index):
         prev = self._activeIndex
