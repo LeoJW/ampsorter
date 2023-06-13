@@ -4,17 +4,17 @@ import json
 import os
 import scipy.io
 import numpy as np
-from PyQt6 import QtCore, QtWidgets, QtGui, uic
+from PyQt6 import QtCore, QtWidgets, uic
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QFileDialog,
     QHeaderView
 )
-from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
 from settingsDialog import *
 
+#TODO: Load from previous actually set up full state (current selected muscles and trials)
 
 
 qt_creator_file = "mainwindow.ui"
@@ -71,7 +71,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         QtWidgets.QMainWindow.__init__(self)
         Ui_MainWindow.__init__(self)
         self.setupUi(self)
-        
         self.trialListModel = TrialListModel()
         self.muscleTableModel = MuscleTableModel() 
         self.trialView.setModel(self.trialListModel)
@@ -90,6 +89,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.traces[i].setDownsampling(ds=1, auto=True, method='subsample')
             self.traces[i].setCurveClickable(True)
             self.traces[i].sigClicked.connect(self.traceClicked)
+        self.traceView.showGrid(x=True, y=True)
         infline = pg.InfiniteLine(pos=1, angle=0, movable=True)
         self.traceView.addItem(infline)
         
@@ -126,8 +126,25 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         #--- Settings dialog
         self.settingsDialog = SettingsDialog(self)
         
-    def onSettingsClick(self):
-        self.settingsDialog.exec()
+        #--- Keyboard shortcuts
+        self.shortcutDict = {
+            "Ctrl+O" : self.onFileOpenClick,
+            "Ctrl+L" : self.onLoadPreviousClick,
+            "Up" : self.nextTrace,
+            "Down" : self.prevTrace
+        }
+        self.shortcuts = []
+        for keycombo, keyfunc in self.shortcutDict.items():
+            self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
+            self.shortcuts[-1].activated.connect(keyfunc)
+        
+    def nextTrace(self):
+        newindex = self._activeIndex + 1 if self._activeIndex < len(muscleNames) else self._activeIndex
+        self.setActiveTrace(newindex)
+    
+    def prevTrace(self):
+        newindex = self._activeIndex - 1 if self._activeIndex != 0 else self._activeIndex
+        self.setActiveTrace(newindex)
     
     def setActiveTrace(self, index):
         prev = self._activeIndex
@@ -173,17 +190,20 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Update traceView plot
         self.updateTraceViewPlot()
     
-    def onFileOpenClick(self, s):
+    def onFileOpenClick(self):
         self._path_data = QFileDialog.getExistingDirectory(self, "Open Data Folder", "~")
         # TODO: logic to only do this if nothing open(?)
         self.initializeDataDir()
     
-    def onLoadPreviousClick(self, s):
+    def onLoadPreviousClick(self):
         # Get paths, core variables from QSettings
         settings = QtCore.QSettings('AgileSystemsLab', 'amps')
         self._path_data, self._path_amps = settings.value('last_paths', [], str)
         # Use those paths to populate app
         self.initializeDataDir()
+        
+    def onSettingsClick(self):
+        self.settingsDialog.exec()
     
     def initializeDataDir(self):
         dir_contents = os.listdir(self._path_data)
