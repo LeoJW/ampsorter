@@ -34,7 +34,7 @@
       </property>
       <property name="maximumSize">
        <size>
-        <width>70</width>
+        <width>80</width>
         <height>240</height>
        </size>
       </property>
@@ -117,7 +117,7 @@
       </property>
       <property name="minimumSize">
        <size>
-        <width>200</width>
+        <width>210</width>
         <height>0</height>
        </size>
       </property>
@@ -160,7 +160,7 @@
          <rect>
           <x>-2</x>
           <y>0</y>
-          <width>191</width>
+          <width>211</width>
           <height>211</height>
          </rect>
         </property>
@@ -198,17 +198,17 @@
            </property>
            <item>
             <property name="text">
-             <string>High-pass</string>
+             <string>highpass</string>
             </property>
            </item>
            <item>
             <property name="text">
-             <string>Band-pass</string>
+             <string>bandpass</string>
             </property>
            </item>
            <item>
             <property name="text">
-             <string>Low-pass</string>
+             <string>lowpass</string>
             </property>
            </item>
           </widget>

@@ -7,7 +7,14 @@ from scipy.signal import butter, cheby1, cheby2, ellip, sosfiltfilt
 import numpy as np
 from PyQt6 import QtCore, QtWidgets, uic
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction, QKeySequence, QShortcut
+from PyQt6.QtGui import (
+    QAction, 
+    QKeySequence, 
+    QShortcut, 
+    QIntValidator, 
+    QDoubleValidator,
+    QColor
+)
 from PyQt6.QtWidgets import (
     QFileDialog,
     QHeaderView
@@ -33,7 +40,7 @@ Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
 # Could set up to instead get names from files themselves
 # Premature optimization is the root of all evil, though
 muscleNames = ['lax','lba','lsa','ldvm','ldlm','rdlm','rdvm','rsa','rba','rax']
-viewEnableColor = '#73A843'
+filtEnableColor = '#73A843'
 highlightColor = '#EEEEEE'
 muscleColors = {
     "lax" : "#94D63C", "rax" : "#6A992A",
@@ -68,6 +75,11 @@ class TraceDataModel():
         if 'time' not in self._names:
             self._maindata['time'] = np.arange(matrix.shape[1])
             self._filtdata['time'] = np.arange(matrix.shape[1])
+        # Save sample rate. Use 1 if there's basically no data
+        if len(self._maindata['time']) >= 10:
+            self._fs = 1 / np.mean(np.diff(self._maindata['time'][0:10]))
+        else:
+            self._fs = 1.0
     def get(self, name):
         # Always return processed form, even if no processing
         return self._filtdata[name]
@@ -124,7 +136,15 @@ class MuscleTableModel(QtCore.QAbstractTableModel):
         return len(self._data[0][0]) 
     def data(self, index, role):
         if role == Qt.ItemDataRole.DisplayRole:
-            return self._data[self.selected_trial_index][index.row()][index.column()]
+            value = self._data[self.selected_trial_index][index.row()][index.column()]
+            if isinstance(value, bool):
+                value = ''
+            return value
+        
+        if role == Qt.ItemDataRole.DecorationRole:
+            value = self._data[self.selected_trial_index][index.row()][index.column()]
+            if isinstance(value, bool) and value:
+                return QColor(filtEnableColor)
 
 # TODO: Model for spike times + units(?) + invalidated + waveforms
 
@@ -154,10 +174,26 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         infline = pg.InfiniteLine(pos=1, angle=0, movable=True)
         self.traceView.addItem(infline)
         
-        # Connect callback functions for changing selections
+        # Connect callback functions for trial/muscle view selection changes
         self.trialView.selectionModel().currentChanged.connect(self.trialSelectionChanged)
         self.muscleView.selectionModel().selectionChanged.connect(self.updateTraceViewPlot)
         self.muscleView.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        
+        #--- Filter controls
+        self.updateFilter()
+        self.passTypeComboBox.currentTextChanged.connect(self.updateFilter)
+        self.filterTypeComboBox.currentTextChanged.connect(self.updateFilter)
+        self.highpassCutoffHzLineEdit.editingFinished.connect(self.updateFilter)
+        self.lowpassCutoffHzLineEdit.editingFinished.connect(self.updateFilter)
+        self.orderLineEdit.editingFinished.connect(self.updateFilter)
+        self.passbandRippleDBLineEdit.editingFinished.connect(self.updateFilter)
+        self.stopbandAttenDBLineEdit.editingFinished.connect(self.updateFilter)
+        self.highpassCutoffHzLineEdit.setValidator(QDoubleValidator(0.01, 5000.0, 3, self))
+        self.lowpassCutoffHzLineEdit.setValidator(QDoubleValidator(0.01, 5000.0, 3, self))
+        self.orderLineEdit.setValidator(QIntValidator(1, 20, self))
+        self.passbandRippleDBLineEdit.setValidator(QDoubleValidator(0, 100, 3, self))
+        self.stopbandAttenDBLineEdit.setValidator(QDoubleValidator(0, 100, 3, self))
+        
         
         #--- Top toolbar menus
         menu = self.menuBar()
@@ -191,14 +227,55 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.shortcutDict = {
             "Ctrl+O" : self.onFileOpenClick,
             "Ctrl+L" : self.onLoadPreviousClick,
-            "Up" : self.nextTrace,
-            "Down" : self.prevTrace
+            "Ctrl+Up" : self.nextTrace,
+            "Ctrl+Down" : self.prevTrace,
+            "F" : self.filterTrace
         }
         self.shortcuts = []
         for keycombo, keyfunc in self.shortcutDict.items():
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
         
+    def updateFilter(self):
+        order = int(self.orderLineEdit.text())
+        passtype = self.passTypeComboBox.currentText()
+        match passtype:
+            case 'highpass':
+                Wn = [float(self.highpassCutoffHzLineEdit.text())]
+            case 'lowpass':
+                Wn = [float(self.lowpassCutoffHzLineEdit.text())]
+            case 'bandpass':
+                Wn = [float(self.highpassCutoffHzLineEdit.text()), float(self.lowpassCutoffHzLineEdit.text())]
+        # Special case where no real time vector: Rescale Wn assuming an actual rate of 10kHz
+        if int(self.traceDataModel._fs) == 1.0:
+            Wn = [i/5001 for i in Wn]
+        match self.filterTypeComboBox.currentText():
+            case 'butterworth':
+                self._filtsos = butter(order, Wn, btype=passtype, fs=self.traceDataModel._fs, output='sos')
+            case 'chebyshev1':
+                rp = float(self.passbandRippleDBLineEdit.text())
+                self._filtsos = cheby1(order, rp, Wn, btype=passtype, fs=self.traceDataModel._fs, output='sos')
+            case 'chebyshev2':
+                rs = float(self.stopbandAttenDBLineEdit.text())
+                self._filtsos = cheby1(order, rs, Wn, btype=passtype, fs=self.traceDataModel._fs, output='sos')
+            case 'elliptic':
+                rp = float(self.passbandRippleDBLineEdit.text())
+                rs = float(self.stopbandAttenDBLineEdit.text())
+                self._filtsos = cheby1(order, rp, rs, Wn, btype=passtype, fs=self.traceDataModel._fs, output='sos')
+        
+    
+    def filterTrace(self):
+        activeMuscle = self.muscleTableModel._data[self.muscleTableModel.selected_trial_index][self._activeIndex][0]
+        filtered = self.muscleTableModel._data[self.muscleTableModel.selected_trial_index][self._activeIndex][2]
+        if filtered:
+            self.traceDataModel.restore(activeMuscle)
+        else:
+            self.traceDataModel.filter(activeMuscle, self._filtsos)
+            self.traceDataModel.normalize(activeMuscle)
+        self.muscleTableModel._data[self.muscleTableModel.selected_trial_index][self._activeIndex][2] = not filtered
+        self.muscleTableModel.layoutChanged.emit()
+        self.updateTraceViewPlot()
+    
     def nextTrace(self):
         newindex = self._activeIndex + 1 if self._activeIndex < len(muscleNames) else self._activeIndex
         self.setActiveTrace(newindex)
