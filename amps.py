@@ -3,6 +3,7 @@
 import json
 import os
 import scipy.io
+from scipy.signal import butter, cheby1, cheby2, ellip, sosfiltfilt
 import numpy as np
 from PyQt6 import QtCore, QtWidgets, uic
 from PyQt6.QtCore import Qt
@@ -16,6 +17,15 @@ from settingsDialog import *
 
 #TODO: Load from previous actually set up full state (current selected muscles and trials)
 
+# Main TODO:
+# - Add filtered column to muscleTable (maybe make colored squares or icons)
+# - Add "detect run" column
+# - Keyboard shortcut f to trigger filter on selected channel, change column
+# - Settings panel in mainwindow for filter settings
+# - Parallel data object of filtered traces (How will these update?)
+# How can I set this up to toggle/stack different processing algorithms?
+# Implement flat inflines for each trace, xvalue relative to 0 stored
+# Implement detect spikes
 
 qt_creator_file = "mainwindow.ui"
 Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
@@ -33,8 +43,60 @@ muscleColors = {
     "ldlm": "#E87D7A", "rdlm": "#C14434"
 }
 
+# TODO: Way to set single channels?
+class TraceDataModel():
+    def __init__(self, channelNames=[''], matrix=np.zeros((1,1)), *args, **kwargs):
+        self.setAll(channelNames, matrix)
+            
+    def setAll(self, channelNames, matrix):
+        self._names = channelNames
+        # Identify dimension of matrix that matches length of names
+        if len(self._names) in matrix.shape:
+            # Arrange so channel dimension always on rows
+            if matrix.shape.index(len(self._names)) == 1:
+                matrix = matrix.T
+        else:
+            raise ValueError(f"Gave {len(self._names)} names but data matrix has no matching dimension")
+        # Store two copies of the data: an original master, and processed form
+        self._maindata = {}
+        self._filtdata = {}
+        for i,n in enumerate(self._names):
+            self._maindata[n] = matrix[i,:].reshape(-1)
+            self._filtdata[n] = matrix[i,:].reshape(-1)
+        self.normalize()
+        # If no time channel, make fake one
+        if 'time' not in self._names:
+            self._maindata['time'] = np.arange(matrix.shape[1])
+            self._filtdata['time'] = np.arange(matrix.shape[1])
+    def get(self, name):
+        # Always return processed form, even if no processing
+        return self._filtdata[name]
+    def normalize(self, name=None):
+        # Do all if no specific specified
+        if name == None:
+            name = self._names
+        # If only one specified make list
+        elif isinstance(name, str): 
+            name = [name]
+        # Run normalization on all specified
+        for n in name:
+            self._filtdata[n] /= (self._filtdata[n].max() - self._filtdata[n].min())
+    def rescale(self, factor=1):
+        for n in self._names:
+            self._filtdata[n] *= factor
+    def filter(self, name, filtsos):
+        if isinstance(name, str):
+            name = [name]
+        for n in name:
+            self._filtdata[n] = sosfiltfilt(filtsos, self._filtdata[n])
+    def restore(self, name):
+        if isinstance(name, str):
+            name = [name]
+        for n in name:
+            self._filtdata[n] = self._maindata[n]
+
 class TrialListModel(QtCore.QAbstractListModel):
-    def __init__(self, *args, trials=None, **kwargs):
+    def __init__(self, trials=None, *args, **kwargs):
         super(TrialListModel, self). __init__(*args, **kwargs)
         self.trials = trials or []
     def data(self, index, role):
@@ -59,7 +121,7 @@ class MuscleTableModel(QtCore.QAbstractTableModel):
         # Takes first sub-list of first trial, returns length
         # (only works if all rows are an equal length)
         # View mode is hidden last column, hidden by not being indexed here
-        return len(self._data[0][0]) - 1
+        return len(self._data[0][0]) 
     def data(self, index, role):
         if role == Qt.ItemDataRole.DisplayRole:
             return self._data[self.selected_trial_index][index.row()][index.column()]
@@ -80,10 +142,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Traces plot
         self._activeIndex = 0
         self.traces = []
-        self.traceData = {'time' : np.zeros((200000, 1))}
+        self.traceDataModel = TraceDataModel()
         for i,m in enumerate(muscleNames):
             pen = pg.mkPen(color=muscleColors[m])
-            self.traceData[m] = np.zeros((200000))
             self.traces.append(self.traceView.plot([0],[0], pen=pen, name=m))
             self.traces[i].curve.metaData = m
             self.traces[i].setDownsampling(ds=1, auto=True, method='subsample')
@@ -115,8 +176,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         file_menu = menu.addMenu("File")
         settings_menu = menu.addMenu("Preferences")
         # Note: naming the settings_menu and settings_action the same name 
-        # seems to trigger moving it to the more official Python > Preferences (Cmd + ,)
-        # location. Not sure why, but it's nice so I'm leaving it
+        # seems to trigger moving it to the more official Python > Preferences (Cmd + ,) location
+        # Not sure why, but it's nice so I'm leaving it
         file_menu.addAction(open_action)
         file_menu.addSeparator()
         file_menu.addAction(load_action)
@@ -163,7 +224,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         unselectedRowIndices = [i for i in set(range(len(muscleNames))) if i not in selectedRowIndices]
         # Plot selected traces
         for i,ind in enumerate(selectedRowIndices):
-            self.traces[ind].setData(self.traceData['time'], self.traceData[muscleNames[ind]] + i)
+            self.traces[ind].setData(self.traceDataModel.get('time'), self.traceDataModel.get(muscleNames[ind]) + i)
         # Clear unselected traces
         for ind in unselectedRowIndices:
             self.traces[ind].setData([0],[0])
@@ -180,13 +241,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         file = scipy.io.loadmat(fname)
         # Grab data
         datamat = file[trial_name[0:-4]][:,0:11]
-        # Get indices corresponding to each muscle name, save data
+        # Grab first 11 channels (BIG ASSUMPTION: time + 10 muscles)
         channelNames = [column[0].lower() for column in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
-        inds = [channelNames.index(item) for item in muscleNames]
-        for i,m in enumerate(muscleNames):
-            # Normalize to amplitude of 1 before saving
-            self.traceData[m] = datamat[:,inds[i]].reshape(-1) / (datamat[:,inds[i]].max() - datamat[:,inds[i]].min())
-        self.traceData['time'] = datamat[:,0] # this might end up being too much of a special case
+        # inds = [channelNames.index(item) for item in muscleNames]
+        self.traceDataModel.setAll(channelNames[0:11], datamat[:,0:11])
         # Update traceView plot
         self.updateTraceViewPlot()
     
