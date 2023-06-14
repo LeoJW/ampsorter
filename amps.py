@@ -257,11 +257,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 self._filtsos = cheby1(order, rp, Wn, btype=passtype, fs=self.traceDataModel._fs, output='sos')
             case 'chebyshev2':
                 rs = float(self.stopbandAttenDBLineEdit.text())
-                self._filtsos = cheby1(order, rs, Wn, btype=passtype, fs=self.traceDataModel._fs, output='sos')
+                self._filtsos = cheby2(order, rs, Wn, btype=passtype, fs=self.traceDataModel._fs, output='sos')
             case 'elliptic':
                 rp = float(self.passbandRippleDBLineEdit.text())
                 rs = float(self.stopbandAttenDBLineEdit.text())
-                self._filtsos = cheby1(order, rp, rs, Wn, btype=passtype, fs=self.traceDataModel._fs, output='sos')
+                self._filtsos = ellip(order, rp, rs, Wn, btype=passtype, fs=self.traceDataModel._fs, output='sos')
         
     
     def filterTrace(self):
