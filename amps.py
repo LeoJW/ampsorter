@@ -3,7 +3,7 @@
 import json
 import os
 import scipy.io
-from scipy.signal import butter, cheby1, cheby2, ellip, sosfiltfilt
+from scipy.signal import butter, cheby1, cheby2, ellip, sosfiltfilt, sosfreqz
 import numpy as np
 from PyQt6 import QtCore, QtWidgets, uic
 from PyQt6.QtCore import Qt
@@ -13,11 +13,13 @@ from PyQt6.QtGui import (
     QShortcut, 
     QIntValidator, 
     QDoubleValidator,
-    QColor
+    QColor,
+    QFont
 )
 from PyQt6.QtWidgets import (
     QFileDialog,
-    QHeaderView
+    QHeaderView,
+    QLineEdit
 )
 import pyqtgraph as pg
 from settingsDialog import *
@@ -25,11 +27,9 @@ from settingsDialog import *
 #TODO: Load from previous actually set up full state (current selected muscles and trials)
 
 # Main TODO:
-# - Add filtered column to muscleTable (maybe make colored squares or icons)
+# - More relaxed/usable shortcuts for selection and filtering
+# - Easier way to switch context from lineedits to plot. Line edits hold context too much
 # - Add "detect run" column
-# - Keyboard shortcut f to trigger filter on selected channel, change column
-# - Settings panel in mainwindow for filter settings
-# - Parallel data object of filtered traces (How will these update?)
 # How can I set this up to toggle/stack different processing algorithms?
 # Implement flat inflines for each trace, xvalue relative to 0 stored
 # Implement detect spikes
@@ -84,9 +84,9 @@ class TraceDataModel():
         # Always return processed form, even if no processing
         return self._filtdata[name]
     def normalize(self, name=None):
-        # Do all if no specific specified
+        # Do all if no specific specified (except time!)
         if name == None:
-            name = self._names
+            name = [n for n in self._names if 'time' not in n.lower()]
         # If only one specified make list
         elif isinstance(name, str): 
             name = [name]
@@ -173,6 +173,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.traceView.showGrid(x=True, y=True)
         infline = pg.InfiniteLine(pos=1, angle=0, movable=True)
         self.traceView.addItem(infline)
+        
+        # Filter frequency response plot
+        self.freqResponse = self.freqResponseView.plot([0], [0])
+        self.freqResponseView.setLogMode(x=True, y=False)
+        freqResponseTickFont = QFont('Times', 5)
+        self.freqResponseView.getAxis('bottom').setStyle(tickFont=freqResponseTickFont)
+        self.freqResponseView.getAxis('left').setStyle(tickFont=freqResponseTickFont)
         
         # Connect callback functions for trial/muscle view selection changes
         self.trialView.selectionModel().currentChanged.connect(self.trialSelectionChanged)
@@ -262,7 +269,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 rp = float(self.passbandRippleDBLineEdit.text())
                 rs = float(self.stopbandAttenDBLineEdit.text())
                 self._filtsos = ellip(order, rp, rs, Wn, btype=passtype, fs=self.traceDataModel._fs, output='sos')
-        
+        # Plot frequency response
+        w, h = sosfreqz(self._filtsos, worN=1500)
+        db = 20*np.log10(np.maximum(np.abs(h), 1e-5))
+        self.freqResponse.setData(w * self.traceDataModel._fs / (2 * np.pi), db)
+        # Clear focus from whichever widget triggered update of filter 
+        if isinstance(self.sender(), QLineEdit):
+            self.sender().clearFocus()
     
     def filterTrace(self):
         activeMuscle = self.muscleTableModel._data[self.muscleTableModel.selected_trial_index][self._activeIndex][0]
@@ -292,8 +305,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.traces[index].setPen(pg.mkPen(color=highlightColor))
         self._activeIndex = index
     
-    def traceClicked(self, evt):
-        selectedMuscle = evt.curve.metaData
+    def traceClicked(self, event):
+        selectedMuscle = event.curve.metaData
         self.setActiveTrace(muscleNames.index(selectedMuscle))
         
     def updateTraceViewPlot(self):
