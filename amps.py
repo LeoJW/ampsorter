@@ -3,7 +3,7 @@
 import json
 import os
 import scipy.io
-from scipy.signal import butter, cheby1, cheby2, ellip, sosfiltfilt, sosfreqz
+from scipy.signal import butter, cheby1, cheby2, ellip, sosfreqz
 import numpy as np
 from PyQt6 import QtCore, QtWidgets, uic
 from PyQt6.QtCore import Qt
@@ -13,7 +13,6 @@ from PyQt6.QtGui import (
     QShortcut, 
     QIntValidator, 
     QDoubleValidator,
-    QColor,
     QFont
 )
 from PyQt6.QtWidgets import (
@@ -23,12 +22,12 @@ from PyQt6.QtWidgets import (
 )
 import pyqtgraph as pg
 from settingsDialog import *
+from dataModels import *
 
 #TODO: Load from previous actually set up full state (current selected muscles and trials)
 
 # Main TODO:
 # - More relaxed/usable shortcuts for selection and filtering
-# - Easier way to switch context from lineedits to plot. Line edits hold context too much
 # - Add "detect run" column
 # How can I set this up to toggle/stack different processing algorithms?
 # Implement flat inflines for each trace, xvalue relative to 0 stored
@@ -38,7 +37,7 @@ qt_creator_file = "mainwindow.ui"
 Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
 
 # Could set up to instead get names from files themselves
-# Premature optimization is the root of all evil, though
+# But premature optimization = root of all evil
 muscleNames = ['lax','lba','lsa','ldvm','ldlm','rdlm','rdvm','rsa','rba','rax']
 filtEnableColor = '#73A843'
 highlightColor = '#EEEEEE'
@@ -50,103 +49,6 @@ muscleColors = {
     "ldlm": "#E87D7A", "rdlm": "#C14434"
 }
 
-# TODO: Way to set single channels?
-class TraceDataModel():
-    def __init__(self, channelNames=[''], matrix=np.zeros((1,1)), *args, **kwargs):
-        self.setAll(channelNames, matrix)
-            
-    def setAll(self, channelNames, matrix):
-        self._names = channelNames
-        # Identify dimension of matrix that matches length of names
-        if len(self._names) in matrix.shape:
-            # Arrange so channel dimension always on rows
-            if matrix.shape.index(len(self._names)) == 1:
-                matrix = matrix.T
-        else:
-            raise ValueError(f"Gave {len(self._names)} names but data matrix has no matching dimension")
-        # Store two copies of the data: an original master, and processed form
-        self._maindata = {}
-        self._filtdata = {}
-        for i,n in enumerate(self._names):
-            self._maindata[n] = matrix[i,:].reshape(-1)
-            self._filtdata[n] = matrix[i,:].reshape(-1)
-        self.normalize()
-        # If no time channel, make fake one
-        if 'time' not in self._names:
-            self._maindata['time'] = np.arange(matrix.shape[1])
-            self._filtdata['time'] = np.arange(matrix.shape[1])
-        # Save sample rate. Use 1 if there's basically no data
-        if len(self._maindata['time']) >= 10:
-            self._fs = 1 / np.mean(np.diff(self._maindata['time'][0:10]))
-        else:
-            self._fs = 1.0
-    def get(self, name):
-        # Always return processed form, even if no processing
-        return self._filtdata[name]
-    def normalize(self, name=None):
-        # Do all if no specific specified (except time!)
-        if name == None:
-            name = [n for n in self._names if 'time' not in n.lower()]
-        # If only one specified make list
-        elif isinstance(name, str): 
-            name = [name]
-        # Run normalization on all specified
-        for n in name:
-            self._filtdata[n] /= (self._filtdata[n].max() - self._filtdata[n].min())
-    def rescale(self, factor=1):
-        for n in self._names:
-            self._filtdata[n] *= factor
-    def filter(self, name, filtsos):
-        if isinstance(name, str):
-            name = [name]
-        for n in name:
-            self._filtdata[n] = sosfiltfilt(filtsos, self._filtdata[n])
-    def restore(self, name):
-        if isinstance(name, str):
-            name = [name]
-        for n in name:
-            self._filtdata[n] = self._maindata[n]
-
-class TrialListModel(QtCore.QAbstractListModel):
-    def __init__(self, trials=None, *args, **kwargs):
-        super(TrialListModel, self). __init__(*args, **kwargs)
-        self.trials = trials or []
-    def data(self, index, role):
-        if role == Qt.ItemDataRole.DisplayRole:
-            trial_num, trial_name = self.trials[index.row()]
-            return trial_num
-    def rowCount(self, index):
-        return len(self.trials)
-
-class MuscleTableModel(QtCore.QAbstractTableModel):
-    def __init__(self, data=[[[]]]):
-        super(MuscleTableModel, self).__init__()
-        self._data = data
-        self.selected_trial_index = 0
-    def setSelectedIndex(self, index):
-        self.selected_trial_index = index
-        self.layoutChanged.emit()
-    def rowCount(self, index):
-        # The length of the outer list
-        return len(self._data[self.selected_trial_index])
-    def columnCount(self, index):
-        # Takes first sub-list of first trial, returns length
-        # (only works if all rows are an equal length)
-        # View mode is hidden last column, hidden by not being indexed here
-        return len(self._data[0][0]) 
-    def data(self, index, role):
-        if role == Qt.ItemDataRole.DisplayRole:
-            value = self._data[self.selected_trial_index][index.row()][index.column()]
-            if isinstance(value, bool):
-                value = ''
-            return value
-        
-        if role == Qt.ItemDataRole.DecorationRole:
-            value = self._data[self.selected_trial_index][index.row()][index.column()]
-            if isinstance(value, bool) and value:
-                return QColor(filtEnableColor)
-
-# TODO: Model for spike times + units(?) + invalidated + waveforms
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -155,6 +57,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.setupUi(self)
         self.trialListModel = TrialListModel()
         self.muscleTableModel = MuscleTableModel() 
+        self.traceDataModel = TraceDataModel()
+        self.spikeDataModel = SpikeDataModel()
         self.trialView.setModel(self.trialListModel)
         self.muscleView.setModel(self.muscleTableModel)
         self._path_data = os.path.dirname(os.path.abspath(__file__))
@@ -162,7 +66,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Traces plot
         self._activeIndex = 0
         self.traces = []
-        self.traceDataModel = TraceDataModel()
         for i,m in enumerate(muscleNames):
             pen = pg.mkPen(color=muscleColors[m])
             self.traces.append(self.traceView.plot([0],[0], pen=pen, name=m))
@@ -171,8 +74,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.traces[i].setCurveClickable(True)
             self.traces[i].sigClicked.connect(self.traceClicked)
         self.traceView.showGrid(x=True, y=True)
-        infline = pg.InfiniteLine(pos=1, angle=0, movable=True)
-        self.traceView.addItem(infline)
+        self.thresholdLine = pg.InfiniteLine(pos=1, angle=0, movable=True)
+        self.traceView.addItem(self.thresholdLine)
         
         # Filter frequency response plot
         self.freqResponse = self.freqResponseView.plot([0], [0])
@@ -236,13 +139,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Ctrl+L" : self.onLoadPreviousClick,
             "Ctrl+Up" : self.nextTrace,
             "Ctrl+Down" : self.prevTrace,
-            "F" : self.filterTrace
+            "F" : self.filterTrace,
+            "Space" : self.detectSpikes
         }
         self.shortcuts = []
         for keycombo, keyfunc in self.shortcutDict.items():
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
-        
+    
+    def detectSpikes(self):
+        print('detecting spikes')
+    
     def updateFilter(self):
         order = int(self.orderLineEdit.text())
         passtype = self.passTypeComboBox.currentText()
@@ -273,22 +180,23 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         w, h = sosfreqz(self._filtsos, worN=1500)
         db = 20*np.log10(np.maximum(np.abs(h), 1e-5))
         self.freqResponse.setData(w * self.traceDataModel._fs / (2 * np.pi), db)
-        # Clear focus from whichever widget triggered update of filter 
+        # Clear focus from LineEdit widgets if they triggered filter update
         if isinstance(self.sender(), QLineEdit):
             self.sender().clearFocus()
     
     def filterTrace(self):
-        activeMuscle = self.muscleTableModel._data[self.muscleTableModel.selected_trial_index][self._activeIndex][0]
-        filtered = self.muscleTableModel._data[self.muscleTableModel.selected_trial_index][self._activeIndex][2]
+        activeMuscle = self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][0]
+        filtered = self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][2]
         if filtered:
             self.traceDataModel.restore(activeMuscle)
         else:
             self.traceDataModel.filter(activeMuscle, self._filtsos)
             self.traceDataModel.normalize(activeMuscle)
-        self.muscleTableModel._data[self.muscleTableModel.selected_trial_index][self._activeIndex][2] = not filtered
+        self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][2] = not filtered
         self.muscleTableModel.layoutChanged.emit()
         self.updateTraceViewPlot()
     
+    # TODO: Could set to only move through currently displayed traces?
     def nextTrace(self):
         newindex = self._activeIndex + 1 if self._activeIndex < len(muscleNames) else self._activeIndex
         self.setActiveTrace(newindex)
@@ -303,6 +211,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.traces[prev].setPen(pg.mkPen(color=muscleColors[muscleNames[prev]]))
         # Set new selection to highlight color
         self.traces[index].setPen(pg.mkPen(color=highlightColor))
+        # Move threshold line/function to selected
+        # Update this when more than just horizontal lines are allowed
+        selectedRowIndices = [item.row() for item in self.muscleView.selectionModel().selectedRows()]
+        if index in selectedRowIndices:
+            newcenter = selectedRowIndices.index(index)
+            newvalue = self.spikeDataModel._params[self.muscleTableModel.trialIndex][index]
+            self.thresholdLine.setValue(newcenter + newvalue)
+            self.thresholdLine.setBounds((newcenter-1, newcenter+1))
         self._activeIndex = index
     
     def traceClicked(self, event):
@@ -333,9 +249,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         datamat = file[trial_name[0:-4]][:,0:11]
         # Grab first 11 channels (BIG ASSUMPTION: time + 10 muscles)
         channelNames = [column[0].lower() for column in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
-        # inds = [channelNames.index(item) for item in muscleNames]
         self.traceDataModel.setAll(channelNames[0:11], datamat[:,0:11])
-        # Update traceView plot
         self.updateTraceViewPlot()
     
     def onFileOpenClick(self):
@@ -369,10 +283,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                     if 'empty' not in f]
             trial_nums = [f[-7:-4] for f in trial_names]
             trials = sorted(zip(trial_nums, trial_names))
-            # Generate fresh (muscle, nspike) matrix
+            # Generate fresh (muscle, nspike) array
             muscle_table = [[[m, i, False] for m in muscleNames] for i in range(len(trials))]
             self.trialListModel.trials = trials
             self.muscleTableModel._data = muscle_table
+            self.spikeDataModel.create(trials, muscleNames)
             self.save()
             self.trialListModel.layoutChanged.emit()
             self.muscleTableModel.layoutChanged.emit()
