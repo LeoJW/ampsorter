@@ -14,12 +14,12 @@ class SpikeDataModel():
         # Spikes columns are [time, unit, valid, waveform...]
         self._spikes = [[np.empty((0,3+waveformLength)) for _ in muscles] for _ in trials]
         self._params = [[paramDefault for _ in muscles] for _ in trials]
-        # self._funcs = [[lambda x,a: x-a for _ in muscles] for _ in trials]
-        self._funcs = []
-        for i,tr in enumerate(trials):
-            self._funcs.append([])
-            for j in muscles:
-                self._funcs[i].append(lambda x,a: x-a)
+        self._funcs = [[lambda x,a: x-a for _ in muscles] for _ in trials]
+        # self._funcs = []
+        # for i,tr in enumerate(trials):
+        #     self._funcs.append([])
+        #     for j in muscles:
+        #         self._funcs[i].append(lambda x,a: x-a)
     def updateSpikes(self, data, index):
         self._spikes[index[0]][index[1]] = data
 

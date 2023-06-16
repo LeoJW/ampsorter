@@ -313,12 +313,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def load(self):
         try:
+            # Load trial/muscle parameters
             with open(os.path.join(self._path_amps, 'trial_params.json'), 'r') as f:
                 data = json.load(f)
                 self.trialListModel.trials = data['trialListModel']
                 self.muscleTableModel._data = data['muscleTableModel']
                 self.trialListModel.layoutChanged.emit()
                 self.muscleTableModel.layoutChanged.emit()
+            # Load spike data
+            muscles = [m[0] for m in self.muscleTableModel._data[0]]
+            trials = [t[0] for t in self.trialListModel.trials]
+            self.spikeDataModel.create(trials, muscles, waveformLength=self.settingsCache['waveformLength'])
             with open(os.path.join(self._path_amps, 'detection_params.json'), 'r') as f:
                 data = json.load(f)
                 self.spikeDataModel._params = data['detectFuncParams']
@@ -328,8 +333,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 os.path.join(self._path_amps, 'spikes.txt'),
                 delimiter=','
             )
-            print(data)
-            
+            # Note: Muscles are numbered in numpy array according to their index/order in muscleTable
+            # Assumes every trial for this folder follows same scheme as first trial
+            if len(data) != 0:
+                for i,trial in enumerate(trials):
+                    for j,muscle in enumerate(muscles):
+                        self.spikeDataModel.updateSpikes(
+                            data[np.logical_and(data[:,0]==int(trial), data[:,1]==j), 2:],
+                            (i,j)
+                        )
         except Exception:
             pass
     def save(self):
@@ -353,13 +365,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         for i, perTrialList in enumerate(self.spikeDataModel._spikes):
             trialNum = int(self.trialListModel.trials[i][0])
             for j, arr in enumerate(perTrialList):
-                print(arr.shape)
-                savelist.append(np.concatenate((
-                    trialNum * np.ones((arr.shape[0],1)), 
-                    j * np.ones((arr.shape[0],1)), 
-                    arr),
-                    axis=1
-                ))
+                savelist.append(
+                    np.concatenate((trialNum * np.ones((arr.shape[0],1)), j * np.ones((arr.shape[0],1)), arr), axis=1)
+                )
         savedata = np.vstack(savelist)
         # Create header with column names, muscle numbering scheme
         # Note: Muscles are numbered in numpy array according to their index/order in muscleTable
