@@ -7,24 +7,22 @@ from PyQt6.QtGui import QColor
 filtEnableColor = '#73A843'
 
 class SpikeDataModel():
-    def __init__(self, *args, **kwargs):
-        print('i am created')
-    
-    def create(self, trials, muscles):
+    # def __init__(self, *args, **kwargs):
+    #     print('i am created')
+    def create(self, trials, muscles, paramDefault=0.5, waveformLength=32):
         # Assumes every trial has the same muscles
         # Spikes columns are [time, unit, valid, waveform...]
-        self._spikes = [[np.empty((0,5)) for _ in muscles] for _ in trials]
-        self._funcs = [[lambda x,a: x-a for _ in muscles] for _ in trials]
-        self._params = [[0.5 for _ in muscles] for _ in trials]
-    
+        self._spikes = [[np.empty((0,3+waveformLength)) for _ in muscles] for _ in trials]
+        self._params = [[paramDefault for _ in muscles] for _ in trials]
+        # self._funcs = [[lambda x,a: x-a for _ in muscles] for _ in trials]
+        self._funcs = []
+        for i,tr in enumerate(trials):
+            self._funcs.append([])
+            for j in muscles:
+                self._funcs[i].append(lambda x,a: x-a)
     def updateSpikes(self, data, index):
         self._spikes[index[0]][index[1]] = data
-    
-    def load(self):
-        print('load')
-        
-    def save(self):
-        print('save')
+
 
 # TODO: Way to set single channels?
 class TraceDataModel():
@@ -68,7 +66,9 @@ class TraceDataModel():
             name = [name]
         # Run normalization on all specified
         for n in name:
-            self._filtdata[n] /= (self._filtdata[n].max() - self._filtdata[n].min())
+            max, min = self._filtdata[n].max(), self._filtdata[n].min()
+            if max != min:
+                self._filtdata[n] /= (max - min)
     def rescale(self, factor=1):
         for n in self._names:
             self._filtdata[n] *= factor
@@ -83,6 +83,7 @@ class TraceDataModel():
         for n in name:
             self._filtdata[n] = self._maindata[n]
 
+
 class TrialListModel(QtCore.QAbstractListModel):
     def __init__(self, trials=None, *args, **kwargs):
         super(TrialListModel, self). __init__(*args, **kwargs)
@@ -93,6 +94,7 @@ class TrialListModel(QtCore.QAbstractListModel):
             return trial_num
     def rowCount(self, index):
         return len(self.trials)
+
 
 class MuscleTableModel(QtCore.QAbstractTableModel):
     def __init__(self, data=[[[]]]):
@@ -108,7 +110,6 @@ class MuscleTableModel(QtCore.QAbstractTableModel):
     def columnCount(self, index):
         # Takes first sub-list of first trial, returns length
         # (only works if all rows are an equal length)
-        # View mode is hidden last column, hidden by not being indexed here
         return len(self._data[0][0]) 
     def data(self, index, role):
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
@@ -116,7 +117,6 @@ class MuscleTableModel(QtCore.QAbstractTableModel):
             if isinstance(value, bool):
                 value = ''
             return value
-        
         if role == QtCore.Qt.ItemDataRole.DecorationRole:
             value = self._data[self.trialIndex][index.row()][index.column()]
             if isinstance(value, bool) and value:

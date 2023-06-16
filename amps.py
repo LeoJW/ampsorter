@@ -1,6 +1,8 @@
 # AMPS
 # Assited Motor Program Sorter (or Muscle Potential Sorter)
 import json
+import dill
+import datetime
 import os
 import scipy.io
 from scipy.signal import butter, cheby1, cheby2, ellip, sosfreqz
@@ -130,8 +132,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         settings_menu.addAction(settings_action)
         settings_menu.addSeparator()
         
-        #--- Settings dialog
+        #--- Settings dialog, main app settings
+        self.settings = QtCore.QSettings('AgileSystemsLab', 'amps')
         self.settingsDialog = SettingsDialog(self)
+        self.setSettingsCache()
         
         #--- Keyboard shortcuts
         self.shortcutDict = {
@@ -149,6 +153,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def detectSpikes(self):
         print('detecting spikes')
+        muscleName = self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][0]
+        trialIndex, muscleIndex = self.muscleTableModel.trialIndex, self._activeIndex
+        func = self.spikeDataModel._funcs[trialIndex][muscleIndex]
+        params = self.spikeDataModel._params[trialIndex][muscleIndex]
+        # Find spikes by checking zero crossings of difference between threshold function and data
+        crossvec = func(self.traceDataModel.get('time'), params) - self.traceDataModel.get(muscleName)
+        
     
     def updateFilter(self):
         order = int(self.orderLineEdit.text())
@@ -254,18 +265,23 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def onFileOpenClick(self):
         self._path_data = QFileDialog.getExistingDirectory(self, "Open Data Folder", "~")
-        # TODO: logic to only do this if nothing open(?)
         self.initializeDataDir()
     
     def onLoadPreviousClick(self):
         # Get paths, core variables from QSettings
-        settings = QtCore.QSettings('AgileSystemsLab', 'amps')
-        self._path_data, self._path_amps = settings.value('last_paths', [], str)
+        self._path_data, self._path_amps = self.settings.value('last_paths', [], str)
         # Use those paths to populate app
         self.initializeDataDir()
         
     def onSettingsClick(self):
         self.settingsDialog.exec()
+        self.setSettingsCache()
+    
+    def setSettingsCache(self):
+        self.settingsCache = {
+            'waveformLength' : int(self.settings.value('waveformLength', '32')),
+            'alignAt' : self.settings.value('alignAt', 'local maxima')
+        }
     
     def initializeDataDir(self):
         dir_contents = os.listdir(self._path_data)
@@ -284,10 +300,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             trial_nums = [f[-7:-4] for f in trial_names]
             trials = sorted(zip(trial_nums, trial_names))
             # Generate fresh (muscle, nspike) array
-            muscle_table = [[[m, i, False] for m in muscleNames] for i in range(len(trials))]
+            muscle_table = [[[m, 0, False] for m in muscleNames] for i in range(len(trials))]
             self.trialListModel.trials = trials
             self.muscleTableModel._data = muscle_table
-            self.spikeDataModel.create(trials, muscleNames)
+            self.spikeDataModel.create(trials, muscleNames, waveformLength=self.settingsCache['waveformLength'])
             self.save()
             self.trialListModel.layoutChanged.emit()
             self.muscleTableModel.layoutChanged.emit()
@@ -297,29 +313,73 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def load(self):
         try:
-            with open(os.path.join(self._path_amps, 'params.db'), 'r') as f:
+            with open(os.path.join(self._path_amps, 'trial_params.json'), 'r') as f:
                 data = json.load(f)
                 self.trialListModel.trials = data['trialListModel']
                 self.muscleTableModel._data = data['muscleTableModel']
                 self.trialListModel.layoutChanged.emit()
                 self.muscleTableModel.layoutChanged.emit()
+            with open(os.path.join(self._path_amps, 'detection_params.json'), 'r') as f:
+                data = json.load(f)
+                self.spikeDataModel._params = data['detectFuncParams']
+            with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'rb') as f:
+                self.spikeDataModel._funcs = dill.load(f)
+            data = np.genfromtxt(
+                os.path.join(self._path_amps, 'spikes.txt'),
+                delimiter=','
+            )
+            print(data)
+            
         except Exception:
             pass
     def save(self):
-        with open(os.path.join(self._path_amps, 'params.db'), 'w') as f:
+        with open(os.path.join(self._path_amps, 'trial_params.json'), 'w') as f:
             data = {
                 'trialListModel' : self.trialListModel.trials,
                 'muscleTableModel' : self.muscleTableModel._data
                 }
-            json.dump(data, f)
+            json.dump(data, f, indent=4, separators=(',',':'))
+        with open(os.path.join(self._path_amps, 'detection_params.json'), 'w') as f:
+            data = {
+                'detectFuncParams' : self.spikeDataModel._params,
+                'sorting date' : str(datetime.datetime.now()),
+                'amps version' : 'v0.0'
+            }
+            json.dump(data, f, indent=4, separators=(',',':'))
+        with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'wb') as f:
+            dill.dump(self.spikeDataModel._funcs, f)
+        # Put spike numpy arrays together into single array, save
+        savelist = []
+        for i, perTrialList in enumerate(self.spikeDataModel._spikes):
+            trialNum = int(self.trialListModel.trials[i][0])
+            for j, arr in enumerate(perTrialList):
+                print(arr.shape)
+                savelist.append(np.concatenate((
+                    trialNum * np.ones((arr.shape[0],1)), 
+                    j * np.ones((arr.shape[0],1)), 
+                    arr),
+                    axis=1
+                ))
+        savedata = np.vstack(savelist)
+        # Create header with column names, muscle numbering scheme
+        # Note: Muscles are numbered in numpy array according to their index/order in muscleTable
+        # Assumes every trial for this folder follows same scheme as first trial
+        colNames = 'trial, muscle, time, unit, valid, waveform \n'
+        muscleScheme = ', '.join([str(i)+' = '+m[0] for (i,m) in enumerate(self.muscleTableModel._data[0])])
+        np.savetxt(
+            os.path.join(self._path_amps, 'spikes.txt'),
+            savedata,
+            fmt = ('%u', '%u', '%.18f', '%u', '%u', *('%.16f' for _ in range(self.settingsCache['waveformLength'])))
+        )
+        
     
     def trial_clicked(self, index):
         indexes = self.trialView.selectedIndexes()
     
     # Execute on app close
     def closeEvent(self, event):
-        settings = QtCore.QSettings('AgileSystemsLab', 'amps')
-        settings.setValue('last_paths', [self._path_data, self._path_amps])
+        self.settings.setValue('last_paths', [self._path_data, self._path_amps])
+        self.settings.sync()
 
 
 app = QtWidgets.QApplication([])
