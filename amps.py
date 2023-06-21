@@ -7,6 +7,7 @@ import os
 import scipy.io
 from scipy.signal import butter, cheby1, cheby2, ellip, sosfreqz
 import numpy as np
+import matplotlib.pyplot as plt
 from PyQt6 import QtCore, QtWidgets, uic
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import (
@@ -189,8 +190,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             params *= -1
         # Find spikes by checking zero crossings of difference between threshold function and data
         crossvec = np.sign(func(self.traceDataModel.get('time'), params) - data)
-        # Get where sign goes from -1 to 1
-        inds = np.where(np.diff(crossvec) == 2.0)[0]
+        # Get where sign goes from +1 to -1
+        inds = np.where(np.diff(crossvec) == -2.0)[0]
         # Remove last "spike" if too close to end
         if (inds[-1] + self.settingsCache['waveformLength']) > len(data):
             inds = np.delete(inds, -1)
@@ -208,8 +209,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         prespike = int(self.settingsCache['fractionPreAlign'] * self.settingsCache['waveformLength'])
         if self.settingsCache['alignAt'] == 'local maxima':
             for i,ind in enumerate(inds):
-                wave = data[ind:ind+self.settingsCache['waveformLength']]
-                spikeind = np.argmax(wave) + ind
+                # wave = data[ind:ind+self.settingsCache['waveformLength']]
+                wave = data[ind-self.settingsCache['waveformLength']:ind+self.settingsCache['waveformLength']]
+                spikeind = np.argmax(wave) + ind - self.settingsCache['waveformLength']
                 wave = data[(spikeind-prespike):(spikeind+self.settingsCache['waveformLength']-prespike)]
                 spikes[i,0] = self.traceDataModel.get('time')[spikeind]
                 spikes[i,2] = 1
