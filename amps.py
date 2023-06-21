@@ -77,6 +77,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.traces[i].sigClicked.connect(self.traceClicked)
         self.traceView.showGrid(x=True, y=True)
         self.thresholdLine = pg.InfiniteLine(pos=1, angle=0, movable=True)
+        self.thresholdLine.setBounds((-0.5, 0.5))
         self.traceView.addItem(self.thresholdLine)
         self.thresholdLine.sigPositionChangeFinished.connect(self.thresholdChanged)
         
@@ -144,10 +145,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.shortcutDict = {
             "Ctrl+O" : self.onFileOpenClick,
             "Ctrl+L" : self.onLoadPreviousClick,
+            "Ctrl+S" : self.save,
             "Ctrl+Up" : self.nextTrace,
             "Ctrl+Down" : self.prevTrace,
             "Up" : self.bumpThresholdUp,
             "Down" : self.bumpThresholdDown,
+            "Alt+Up" : lambda: self.bumpThresholdUp(bump=0.05),
+            "Alt+Down" : lambda: self.bumpThresholdDown(bump=0.05),
             "F" : self.filterTrace,
             "Space" : self.detectSpikes
         }
@@ -159,6 +163,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def updateWaveView(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
+            self.waves.setData([0], [0], connect=np.array([1]))
             return
         validWaves = self.spikeDataModel._spikes[ti][mi][:,2]==1
         nwaves = sum(validWaves)
@@ -179,6 +184,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # If threshold is negative, flip both so we look for maximums
         # (Assumes params just single flat threshold)
         if params < 0:
+            data = data.copy() # Otherwise actual data will get flipped
             data *= -1
             params *= -1
         # Find spikes by checking zero crossings of difference between threshold function and data
@@ -216,7 +222,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 spikes[i,2] = 1
                 spikes[i,3] = prespike
                 spikes[i,4:] = wave
+
         self.spikeDataModel._spikes[trialIndex][muscleIndex] = spikes
+        self.muscleTableModel._data[trialIndex][muscleIndex][1] = len(inds)
+        self.muscleTableModel.layoutChanged.emit()
         self.updateWaveView()
     
     def updateFilter(self):
@@ -293,6 +302,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.thresholdLine.setValue(newcenter + newvalue)
             self.thresholdLine.setBounds((newcenter-0.5, newcenter+0.5))
         self._activeIndex = index
+        self.updateWaveView()
     
     def bumpThresholdUp(self, bump=0.01):
         current = self.thresholdLine.value()
@@ -321,7 +331,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Update Y axis
         yax = self.traceView.getAxis('left')
         yax.setTicks([[(i, muscleNames[j]) for i,j in enumerate(selectedRowIndices)],[]])
-        
+        # Set active index as one of the selected traces
+        if self._activeIndex not in selectedRowIndices and len(selectedRowIndices) > 0:
+            self.setActiveTrace(selectedRowIndices[0])
     
     def trialSelectionChanged(self, current, previous):
         self.muscleTableModel.setSelectedIndex(current.row())
@@ -451,9 +463,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         np.savetxt(
             os.path.join(self._path_amps, 'spikes.txt'),
             savedata,
-            fmt = ('%u', '%u', '%.18f', '%u', '%u', '%u', *('%.16f' for _ in range(self.settingsCache['waveformLength'])))
+            fmt = ('%u', '%u', '%.18f', '%u', '%u', '%u', *('%.16f' for _ in range(self.settingsCache['waveformLength']))),
+            delimiter=',',
+            header=colNames + muscleScheme
         )
-        
+        print('file saved')
     
     def trial_clicked(self, index):
         indexes = self.trialView.selectedIndexes()
@@ -462,6 +476,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def closeEvent(self, event):
         self.settings.setValue('last_paths', [self._path_data, self._path_amps])
         self.settings.sync()
+        self.save()
 
 
 app = QtWidgets.QApplication([])
