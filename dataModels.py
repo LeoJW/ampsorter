@@ -7,19 +7,12 @@ from PyQt6.QtGui import QColor
 filtEnableColor = '#73A843'
 
 class SpikeDataModel():
-    # def __init__(self, *args, **kwargs):
-    #     print('i am created')
-    def create(self, trials, muscles, paramDefault=0.5, waveformLength=32):
+    def create(self, trials, muscles, paramDefault=0.4, waveformLength=32):
         # Assumes every trial has the same muscles
-        # Spikes columns are [time, unit, valid, waveform...]
-        self._spikes = [[np.empty((0,3+waveformLength)) for _ in muscles] for _ in trials]
+        # Spikes columns are [time, unit, valid, samples pre-spike, waveform...]
+        self._spikes = [[np.empty((0, 4 + waveformLength)) for _ in muscles] for _ in trials]
         self._params = [[paramDefault for _ in muscles] for _ in trials]
-        self._funcs = [[lambda x,a: x-a for _ in muscles] for _ in trials]
-        # self._funcs = []
-        # for i,tr in enumerate(trials):
-        #     self._funcs.append([])
-        #     for j in muscles:
-        #         self._funcs[i].append(lambda x,a: x-a)
+        self._funcs = [[lambda t,a: a for _ in muscles] for _ in trials]
     def updateSpikes(self, data, index):
         self._spikes[index[0]][index[1]] = data
 

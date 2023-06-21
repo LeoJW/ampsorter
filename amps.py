@@ -78,6 +78,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.traceView.showGrid(x=True, y=True)
         self.thresholdLine = pg.InfiniteLine(pos=1, angle=0, movable=True)
         self.traceView.addItem(self.thresholdLine)
+        self.thresholdLine.sigPositionChangeFinished.connect(self.thresholdChanged)
+        
+        self.waves = self.waveView.plot([0],[0])
         
         # Filter frequency response plot
         self.freqResponse = self.freqResponseView.plot([0], [0])
@@ -153,15 +156,68 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
     
+    def updateWaveView(self):
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
+            return
+        validWaves = self.spikeDataModel._spikes[ti][mi][:,2]==1
+        nwaves = sum(validWaves)
+        ydata = self.spikeDataModel._spikes[ti][mi][validWaves, 4:].ravel()
+        xdata = np.tile(np.arange(self.settingsCache['waveformLength']), nwaves)
+        singleConnected = np.ones(self.settingsCache['waveformLength'], dtype=np.int32)
+        singleConnected[-1] = 0
+        connected = np.tile(singleConnected, nwaves)
+        self.waves.setData(xdata, ydata, connect=connected)
+    
     def detectSpikes(self):
         print('detecting spikes')
         muscleName = self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][0]
         trialIndex, muscleIndex = self.muscleTableModel.trialIndex, self._activeIndex
         func = self.spikeDataModel._funcs[trialIndex][muscleIndex]
         params = self.spikeDataModel._params[trialIndex][muscleIndex]
+        data = self.traceDataModel.get(muscleName)
+        # If threshold is negative, flip both so we look for maximums
+        # (Assumes params just single flat threshold)
+        if params < 0:
+            data *= -1
+            params *= -1
         # Find spikes by checking zero crossings of difference between threshold function and data
-        crossvec = func(self.traceDataModel.get('time'), params) - self.traceDataModel.get(muscleName)
-        
+        crossvec = np.sign(func(self.traceDataModel.get('time'), params) - data)
+        # Get where sign goes from -1 to 1
+        inds = np.where(np.diff(crossvec) == 2.0)[0]
+        # Remove last "spike" if too close to end
+        if (inds[-1] + self.settingsCache['waveformLength']) > len(data):
+            inds = np.delete(inds, -1)
+        # Remove inds that don't meet dead time requirements
+        difinds = np.diff(inds)
+        keepinds = np.full(inds.shape, True)
+        for i in range(len(inds)-1):
+            if difinds[i] <= self.settingsCache['deadTime']:
+                keepinds[i+1] = False
+                difinds[i+1] += difinds[i]
+        inds = inds[keepinds,...]
+        # Align each spike, save spike at each time
+        # Spikes columns are [time, unit, valid, prespike, waveform...]
+        spikes = np.zeros((len(inds), 4 + self.settingsCache['waveformLength']))
+        prespike = int(self.settingsCache['fractionPreAlign'] * self.settingsCache['waveformLength'])
+        if self.settingsCache['alignAt'] == 'local maxima':
+            for i,ind in enumerate(inds):
+                wave = data[ind:ind+self.settingsCache['waveformLength']]
+                spikeind = np.argmax(wave) + ind
+                wave = data[(spikeind-prespike):(spikeind+self.settingsCache['waveformLength']-prespike)]
+                spikes[i,0] = self.traceDataModel.get('time')[spikeind]
+                spikes[i,2] = 1
+                spikes[i,3] = prespike
+                spikes[i,4:] = wave
+        elif self.settingsCache['alignAt'] == 'threshold crossing':
+            for i,ind in enumerate(inds):
+                wave = data[(ind-prespike):(ind+self.settingsCache['waveformLength']-prespike)]
+                spikes[i,0] = self.traceDataModel.get('time')[ind]
+                spikes[i,2] = 1
+                spikes[i,3] = prespike
+                spikes[i,4:] = wave
+        self.spikeDataModel._spikes[trialIndex][muscleIndex] = spikes
+        self.updateWaveView()
     
     def updateFilter(self):
         order = int(self.orderLineEdit.text())
@@ -235,15 +291,23 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             newcenter = selectedRowIndices.index(index)
             newvalue = self.spikeDataModel._params[self.muscleTableModel.trialIndex][index]
             self.thresholdLine.setValue(newcenter + newvalue)
-            self.thresholdLine.setBounds((newcenter-1, newcenter+1))
+            self.thresholdLine.setBounds((newcenter-0.5, newcenter+0.5))
         self._activeIndex = index
     
     def bumpThresholdUp(self, bump=0.01):
         current = self.thresholdLine.value()
         self.thresholdLine.setValue(current + bump)
+        self.thresholdChanged()
+    
     def bumpThresholdDown(self, bump=0.01):
         current = self.thresholdLine.value()
         self.thresholdLine.setValue(current - bump)
+        self.thresholdChanged()
+    
+    def thresholdChanged(self):
+        trialIndex, muscleIndex = self.muscleTableModel.trialIndex, self._activeIndex
+        newvalue = self.thresholdLine.value() - (self.thresholdLine.bounds()[0] + 0.5)
+        self.spikeDataModel._params[trialIndex][muscleIndex] = newvalue
     
     def updateTraceViewPlot(self):
         selectedRowIndices = [item.row() for item in self.muscleView.selectionModel().selectedRows()]
@@ -277,9 +341,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.initializeDataDir()
     
     def onLoadPreviousClick(self):
-        # Get paths, core variables from QSettings
+        # Get paths, core variables from QSettings, use to populate app
         self._path_data, self._path_amps = self.settings.value('last_paths', [], str)
-        # Use those paths to populate app
         self.initializeDataDir()
         
     def onSettingsClick(self):
@@ -289,7 +352,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def setSettingsCache(self):
         self.settingsCache = {
             'waveformLength' : int(self.settings.value('waveformLength', '32')),
-            'alignAt' : self.settings.value('alignAt', 'local maxima')
+            'alignAt' : self.settings.value('alignAt', 'local maxima'),
+            'deadTime' : int(self.settings.value('deadTime', '10')),
+            'fractionPreAlign' : float(self.settings.value('fractionPreAlign', '0.2'))
         }
     
     def initializeDataDir(self):
@@ -381,12 +446,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Create header with column names, muscle numbering scheme
         # Note: Muscles are numbered in numpy array according to their index/order in muscleTable
         # Assumes every trial for this folder follows same scheme as first trial
-        colNames = 'trial, muscle, time, unit, valid, waveform \n'
+        colNames = 'trial, muscle, time, unit, valid, prespike, waveform \n'
         muscleScheme = ', '.join([str(i)+' = '+m[0] for (i,m) in enumerate(self.muscleTableModel._data[0])])
         np.savetxt(
             os.path.join(self._path_amps, 'spikes.txt'),
             savedata,
-            fmt = ('%u', '%u', '%.18f', '%u', '%u', *('%.16f' for _ in range(self.settingsCache['waveformLength'])))
+            fmt = ('%u', '%u', '%.18f', '%u', '%u', '%u', *('%.16f' for _ in range(self.settingsCache['waveformLength'])))
         )
         
     
