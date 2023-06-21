@@ -38,7 +38,7 @@
     <rect>
      <x>10</x>
      <y>30</y>
-     <width>241</width>
+     <width>251</width>
      <height>201</height>
     </rect>
    </property>
@@ -103,6 +103,34 @@
         <string>threshold crossing</string>
        </property>
       </item>
+     </widget>
+    </item>
+    <item row="2" column="0">
+     <widget class="QLabel" name="deadTimeSamplesLabel">
+      <property name="text">
+       <string>Dead time (samples)</string>
+      </property>
+     </widget>
+    </item>
+    <item row="2" column="1">
+     <widget class="QLineEdit" name="deadTimeSamplesLineEdit">
+      <property name="text">
+       <string>10</string>
+      </property>
+     </widget>
+    </item>
+    <item row="3" column="0">
+     <widget class="QLabel" name="fractionPreAlignLabel">
+      <property name="text">
+       <string>Fraction pre-align</string>
+      </property>
+     </widget>
+    </item>
+    <item row="3" column="1">
+     <widget class="QLineEdit" name="fractionPreAlignLineEdit">
+      <property name="text">
+       <string>0.2</string>
+      </property>
      </widget>
     </item>
    </layout>

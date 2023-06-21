@@ -143,6 +143,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Ctrl+L" : self.onLoadPreviousClick,
             "Ctrl+Up" : self.nextTrace,
             "Ctrl+Down" : self.prevTrace,
+            "Up" : self.bumpThresholdUp,
+            "Down" : self.bumpThresholdDown,
             "F" : self.filterTrace,
             "Space" : self.detectSpikes
         }
@@ -216,6 +218,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         newindex = self._activeIndex - 1 if self._activeIndex != 0 else self._activeIndex
         self.setActiveTrace(newindex)
     
+    def traceClicked(self, event):
+        selectedMuscle = event.curve.metaData
+        self.setActiveTrace(muscleNames.index(selectedMuscle))
+    
     def setActiveTrace(self, index):
         prev = self._activeIndex
         # Change prev color back
@@ -232,10 +238,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.thresholdLine.setBounds((newcenter-1, newcenter+1))
         self._activeIndex = index
     
-    def traceClicked(self, event):
-        selectedMuscle = event.curve.metaData
-        self.setActiveTrace(muscleNames.index(selectedMuscle))
-        
+    def bumpThresholdUp(self, bump=0.01):
+        current = self.thresholdLine.value()
+        self.thresholdLine.setValue(current + bump)
+    def bumpThresholdDown(self, bump=0.01):
+        current = self.thresholdLine.value()
+        self.thresholdLine.setValue(current - bump)
+    
     def updateTraceViewPlot(self):
         selectedRowIndices = [item.row() for item in self.muscleView.selectionModel().selectedRows()]
         unselectedRowIndices = [i for i in set(range(len(muscleNames))) if i not in selectedRowIndices]

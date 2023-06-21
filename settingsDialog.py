@@ -1,5 +1,5 @@
 from PyQt6 import QtWidgets, QtCore, uic
-from PyQt6.QtGui import QIntValidator
+from PyQt6.QtGui import QIntValidator, QDoubleValidator
 from PyQt6.QtWidgets import QLineEdit, QComboBox
 
 class SettingsDialog(QtWidgets.QDialog):
@@ -10,15 +10,24 @@ class SettingsDialog(QtWidgets.QDialog):
         self.settings = QtCore.QSettings('AgileSystemsLab', 'amps')
         
         self.waveformLengthLineEdit.setValidator(QIntValidator(1, 999, self))
+        self.deadTimeSamplesLineEdit.setValidator(QIntValidator(1, 999, self))
+        self.fractionPreAlignLineEdit.setValidator(QDoubleValidator(0, 1, 2, self))
         
         self.waveformLengthLineEdit.settingsKey = 'waveformLength'
         self.alignAtComboBox.settingsKey = 'alignAt'
+        self.deadTimeSamplesLineEdit.settingsKey = 'deadTime'
+        self.fractionPreAlignLineEdit.settingsKey = 'fractionPreAlign'
+        
         # Apply saved settings to all properties
         self.waveformLengthLineEdit.insert(self.settings.value('waveformLength', '32', str))
         self.alignAtComboBox.setCurrentText(self.settings.value('alignAt', 'local maxima', str))
+        self.deadTimeSamplesLineEdit.insert(self.settings.value('deadTime', '10', str))
+        self.fractionPreAlignLineEdit.insert(self.settings.value('fractionPreAlign', '0.2', str))
         
-        self.alignAtComboBox.currentTextChanged.connect(self.updateSettings)
         self.waveformLengthLineEdit.editingFinished.connect(self.updateSettings)
+        self.alignAtComboBox.currentTextChanged.connect(self.updateSettings)
+        self.deadTimeSamplesLineEdit.editingFinished.connect(self.updateSettings)
+        self.fractionPreAlignLineEdit.editingFinished.connect(self.updateSettings)
         
         self.activateWindow()
     
