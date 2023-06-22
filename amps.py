@@ -7,9 +7,7 @@ import os
 import scipy.io
 from scipy.signal import butter, cheby1, cheby2, ellip, sosfreqz
 import numpy as np
-import matplotlib.pyplot as plt
 from PyQt6 import QtCore, QtWidgets, uic
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import (
     QAction, 
     QKeySequence, 
@@ -51,6 +49,14 @@ muscleColors = {
     "ldvm": "#66AFE6", "rdvm": "#2A4A78",
     "ldlm": "#E87D7A", "rdlm": "#C14434"
 }
+unitColors = [
+    '#8dd3c7', 
+    '#bebada', '#fb8072',
+    '#80b1d3', '#fdb462',
+    '#b3de69', '#fccde5',
+    '#d9d9d9', '#bc80bd',
+    '#ccebc5', '#ffed6f', '#ffffb3'
+]
 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
@@ -81,8 +87,16 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.thresholdLine.setBounds((-0.5, 0.5))
         self.traceView.addItem(self.thresholdLine)
         self.thresholdLine.sigPositionChangeFinished.connect(self.thresholdChanged)
-        
+        # Waveform plot
         self.waves = self.waveView.plot([0],[0])
+        # PC plot (for now assumes max of 12 units)
+        self.pcUnits = []
+        for i in range(12):
+            self.pcUnits.append(
+                self.pcView.plot([0],[0], 
+                    pen=None, symbolPen=None, 
+                    symbol='o', symbolSize=5, brush=pg.mkBrush(unitColors[i]))
+            )
         
         # Filter frequency response plot
         self.freqResponse = self.freqResponseView.plot([0], [0])
@@ -175,6 +189,26 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         connected = np.tile(singleConnected, nwaves)
         self.waves.setData(xdata, ydata, connect=connected)
     
+    def updatePCView(self):
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
+            for i in range(len(self.pcUnits)):
+                self.pcUnits[i].setData([0],[0])
+            return
+        units = np.unique(self.spikeDataModel._spikes[ti][mi][1,:])
+        for i in range(len(units)):
+            rows = np.logical_and(
+                self.spikeDataModel._spikes[ti][mi][:,1] == units[i],
+                self.spikeDataModel._spikes[ti][mi][:,2] == 1
+                )
+            print(rows.shape)
+            print(self.spikeDataModel._spikes[ti][mi].shape)
+            print(self.spikeDataModel._pc[ti][mi].shape)
+            self.pcUnits[i].setData(
+                self.spikeDataModel._pc[ti][mi][rows,0], 
+                self.spikeDataModel._pc[ti][mi][rows,1]
+                )
+    
     def detectSpikes(self):
         print('detecting spikes')
         muscleName = self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][0]
@@ -209,9 +243,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         prespike = int(self.settingsCache['fractionPreAlign'] * self.settingsCache['waveformLength'])
         if self.settingsCache['alignAt'] == 'local maxima':
             for i,ind in enumerate(inds):
-                # wave = data[ind:ind+self.settingsCache['waveformLength']]
-                wave = data[ind-self.settingsCache['waveformLength']:ind+self.settingsCache['waveformLength']]
-                spikeind = np.argmax(wave) + ind - self.settingsCache['waveformLength']
+                wave = data[ind:ind+self.settingsCache['waveformLength']]
+                # wave = data[ind-self.settingsCache['waveformLength']:ind+self.settingsCache['waveformLength']]
+                spikeind = np.argmax(wave) + ind# - self.settingsCache['waveformLength']
                 wave = data[(spikeind-prespike):(spikeind+self.settingsCache['waveformLength']-prespike)]
                 spikes[i,0] = self.traceDataModel.get('time')[spikeind]
                 spikes[i,2] = 1
@@ -224,11 +258,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 spikes[i,2] = 1
                 spikes[i,3] = prespike
                 spikes[i,4:] = wave
-
         self.spikeDataModel._spikes[trialIndex][muscleIndex] = spikes
         self.muscleTableModel._data[trialIndex][muscleIndex][1] = len(inds)
         self.muscleTableModel.layoutChanged.emit()
+        self.spikeDataModel.updatePCA((trialIndex, muscleIndex))
         self.updateWaveView()
+        self.updatePCView()
     
     def updateFilter(self):
         order = int(self.orderLineEdit.text())
@@ -305,6 +340,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.thresholdLine.setBounds((newcenter-0.5, newcenter+0.5))
         self._activeIndex = index
         self.updateWaveView()
+        self.updatePCView()
     
     def bumpThresholdUp(self, bump=0.01):
         current = self.thresholdLine.value()

@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.signal import sosfiltfilt
+from sklearn.decomposition import PCA
 from PyQt6 import QtCore
 from PyQt6.QtGui import QColor
 
@@ -13,8 +14,12 @@ class SpikeDataModel():
         self._spikes = [[np.empty((0, 4 + waveformLength)) for _ in muscles] for _ in trials]
         self._params = [[paramDefault for _ in muscles] for _ in trials]
         self._funcs = [[lambda t,a: a for _ in muscles] for _ in trials]
+        self._pc = [[np.empty((0, 2)) for _ in muscles] for _ in trials]
     def updateSpikes(self, data, index):
         self._spikes[index[0]][index[1]] = data
+    def updatePCA(self, index):
+        pca = PCA(n_components=2)
+        self._pc[index[0]][index[1]] = pca.fit_transform(self._spikes[index[0]][index[1]][:,4:])
 
 
 # TODO: Way to set single channels?
