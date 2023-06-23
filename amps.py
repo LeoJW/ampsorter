@@ -191,19 +191,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def updatePCView(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        # TODO: Handle creating more pcUnits objects if more units than exist
         if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
             for i in range(len(self.pcUnits)):
                 self.pcUnits[i].setData([0],[0])
             return
-        units = np.unique(self.spikeDataModel._spikes[ti][mi][1,:])
+        units = np.unique(self.spikeDataModel._spikes[ti][mi][:,1])
         for i in range(len(units)):
             rows = np.logical_and(
                 self.spikeDataModel._spikes[ti][mi][:,1] == units[i],
                 self.spikeDataModel._spikes[ti][mi][:,2] == 1
                 )
-            print(rows.shape)
-            print(self.spikeDataModel._spikes[ti][mi].shape)
-            print(self.spikeDataModel._pc[ti][mi].shape)
             self.pcUnits[i].setData(
                 self.spikeDataModel._pc[ti][mi][rows,0], 
                 self.spikeDataModel._pc[ti][mi][rows,1]
