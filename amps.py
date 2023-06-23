@@ -5,6 +5,7 @@ import dill
 import datetime
 import os
 import scipy.io
+import time
 from scipy.signal import butter, cheby1, cheby2, ellip, sosfreqz
 import numpy as np
 from PyQt6 import QtCore, QtWidgets, uic
@@ -110,8 +111,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 pen=None, symbolPen=None, 
                 symbol='o', symbolSize=1, symbolBrush=invalidColor)
         )
-        # Spike plot aesthetics
+        # Spikes plot
+        self.spikeView.setXLink(self.traceView)
         self.spikeView.showAxes(False)
+        
         # Filter frequency response plot
         self.freqResponse = self.freqResponseView.plot([], [])
         self.freqResponseView.setLogMode(x=True, y=False)
@@ -195,9 +198,32 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             for sp in self.spikes:
                 sp.setData([], [], connect=np.array([1]))
             return
-        units = np.unique(self.spikeDataModel._spikes[ti][mi][:,1])
+        unit = self.spikeDataModel._spikes[ti][mi][:,1]
         valid = self.spikeDataModel._spikes[ti][mi][:,2] == 1
-        # Plot valid spikes
+        # Assume samples pre spike same across all spike waveforms
+        samplesPreSpike = self.spikeDataModel._spikes[ti][mi][0,3]
+        xvec = (np.arange(0, self.settingsCache['waveformLength']) - samplesPreSpike) / int(self.traceDataModel._fs)
+        # Plot valid spikes for each unit
+        for u in [int(x) for x in np.unique(unit)]:
+            mask = np.logical_and(valid, unit==u)
+            nwaves = sum(mask)
+            xdata = np.hstack([xvec + t for t in self.spikeDataModel._spikes[ti][mi][mask,0]])
+            ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
+            singleConnected = np.ones(self.settingsCache['waveformLength'], dtype=np.int32)
+            singleConnected[-1] = 0
+            connected = np.tile(singleConnected, nwaves)
+            self.spikes[u].setData(xdata, ydata, connect=connected)
+        # Plot invalid waveforms, if they exist
+        mask = np.logical_not(valid)
+        if not np.any(mask):
+            return
+        nwaves = sum(mask)
+        ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
+        xdata = np.hstack([xvec + t for t in self.spikeDataModel._spikes[ti][mi][mask,0]])
+        singleConnected = np.ones(self.settingsCache['waveformLength'], dtype=np.int32)
+        singleConnected[-1] = 0
+        connected = np.tile(singleConnected, nwaves)
+        self.spikes[-1].setData(xdata, ydata, connect=connected)
     
     def updateWaveView(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
@@ -283,7 +309,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if self.settingsCache['alignAt'] == 'local maxima':
             for i,ind in enumerate(inds):
                 wave = data[ind:ind+self.settingsCache['waveformLength']]
-                spikeind = np.argmax(wave) + ind# - self.settingsCache['waveformLength']
+                spikeind = np.argmax(wave) + ind
                 wave = data[(spikeind-prespike):(spikeind+self.settingsCache['waveformLength']-prespike)]
                 spikes[i,0] = self.traceDataModel.get('time')[spikeind]
                 spikes[i,2] = 1
@@ -302,6 +328,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.spikeDataModel.updatePCA((trialIndex, muscleIndex))
         self.updatePCView()
         self.updateWaveView()
+        self.updateSpikeView()
     
     def updateFilter(self):
         order = int(self.orderLineEdit.text())
@@ -377,8 +404,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.thresholdLine.setValue(newcenter + newvalue)
             self.thresholdLine.setBounds((newcenter-0.5, newcenter+0.5))
         self._activeIndex = index
-        self.updateWaveView()
         self.updatePCView()
+        self.updateWaveView()
+        self.updateSpikeView()
     
     def bumpThresholdUp(self, bump=0.01):
         current = self.thresholdLine.value()
