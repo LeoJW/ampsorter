@@ -14,7 +14,8 @@ from PyQt6.QtGui import (
     QShortcut, 
     QIntValidator, 
     QDoubleValidator,
-    QFont
+    QFont,
+    QColor
 )
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -50,13 +51,14 @@ muscleColors = {
     "ldlm": "#E87D7A", "rdlm": "#C14434"
 }
 unitColors = [
-    '#8dd3c7', 
+    '#ffffff', '#8dd3c7', 
     '#bebada', '#fb8072',
     '#80b1d3', '#fdb462',
     '#b3de69', '#fccde5',
     '#d9d9d9', '#bc80bd',
-    '#ccebc5', '#ffed6f', '#ffffb3'
+    '#ccebc5', '#ffed6f'
 ]
+invalidColor = QColor(110,110,110,200)
 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
@@ -77,7 +79,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.traces = []
         for i,m in enumerate(muscleNames):
             pen = pg.mkPen(color=muscleColors[m])
-            self.traces.append(self.traceView.plot([0],[0], pen=pen, name=m))
+            self.traces.append(self.traceView.plot([],[], pen=pen, name=m))
             self.traces[i].curve.metaData = m
             self.traces[i].setDownsampling(ds=1, auto=True, method='subsample')
             self.traces[i].setCurveClickable(True)
@@ -87,19 +89,31 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.thresholdLine.setBounds((-0.5, 0.5))
         self.traceView.addItem(self.thresholdLine)
         self.thresholdLine.sigPositionChangeFinished.connect(self.thresholdChanged)
-        # Waveform plot
-        self.waves = self.waveView.plot([0],[0])
-        # PC plot (for now assumes max of 12 units)
+        # Waveform, spikes, PC plots 
+        # (for now assumes max of 12 units, quite dumb but rarely ever more than 2-3)
+        self.waves = []
+        self.spikes = []
         self.pcUnits = []
         for i in range(12):
+            self.waves.append(self.waveView.plot([],[], pen=pg.mkPen(unitColors[i])))
+            self.spikes.append(self.spikeView.plot([],[], pen=pg.mkPen(unitColors[i])))
             self.pcUnits.append(
-                self.pcView.plot([0],[0], 
+                self.pcView.plot([],[], 
                     pen=None, symbolPen=None, 
-                    symbol='o', symbolSize=5, brush=pg.mkBrush(unitColors[i]))
+                    symbol='o', symbolSize=3, symbolBrush=unitColors[i])
             )
-        
+        # Extra last entry for invalid spikes/waves/pc points
+        self.waves.append(self.waveView.plot([],[], pen=pg.mkPen(invalidColor)))
+        self.spikes.append(self.spikeView.plot([],[], pen=pg.mkPen(invalidColor)))
+        self.pcUnits.append(
+            self.pcView.plot([],[], 
+                pen=None, symbolPen=None, 
+                symbol='o', symbolSize=1, symbolBrush=invalidColor)
+        )
+        # Spike plot aesthetics
+        self.spikeView.showAxes(False)
         # Filter frequency response plot
-        self.freqResponse = self.freqResponseView.plot([0], [0])
+        self.freqResponse = self.freqResponseView.plot([], [])
         self.freqResponseView.setLogMode(x=True, y=False)
         freqResponseTickFont = QFont('Times', 5)
         self.freqResponseView.getAxis('bottom').setStyle(tickFont=freqResponseTickFont)
@@ -142,8 +156,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         
         file_menu = menu.addMenu("File")
         settings_menu = menu.addMenu("Preferences")
-        # Note: naming the settings_menu and settings_action the same name 
-        # seems to trigger moving it to the more official Python > Preferences (Cmd + ,) location
+        # Note: naming the settings_menu and settings_action the same name for macOS
+        # triggers moving it to the more official Python > Preferences (Cmd + ,) location
         # Not sure why, but it's nice so I'm leaving it
         file_menu.addAction(open_action)
         file_menu.addSeparator()
@@ -175,37 +189,64 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
     
+    def updateSpikeView(self):
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
+            for sp in self.spikes:
+                sp.setData([], [], connect=np.array([1]))
+            return
+        units = np.unique(self.spikeDataModel._spikes[ti][mi][:,1])
+        valid = self.spikeDataModel._spikes[ti][mi][:,2] == 1
+        # Plot valid spikes
+    
     def updateWaveView(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
-            self.waves.setData([0], [0], connect=np.array([1]))
+            for w in self.waves:
+                w.setData([], [], connect=np.array([1]))
             return
-        validWaves = self.spikeDataModel._spikes[ti][mi][:,2]==1
-        nwaves = sum(validWaves)
-        ydata = self.spikeDataModel._spikes[ti][mi][validWaves, 4:].ravel()
+        unit = self.spikeDataModel._spikes[ti][mi][:,1]
+        valid = self.spikeDataModel._spikes[ti][mi][:,2] == 1
+        # Plot valid waveforms from each unit
+        for u in [int(x) for x in np.unique(unit)]:
+            mask = np.logical_and(valid, unit==u)
+            nwaves = sum(mask)
+            ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
+            xdata = np.tile(np.arange(self.settingsCache['waveformLength']), nwaves)
+            singleConnected = np.ones(self.settingsCache['waveformLength'], dtype=np.int32)
+            singleConnected[-1] = 0
+            connected = np.tile(singleConnected, nwaves)
+            self.waves[u].setData(xdata, ydata, connect=connected)
+        # Plot invalid waveforms, if they exist
+        mask = np.logical_not(valid)
+        if not np.any(mask):
+            return
+        nwaves = sum(mask)
+        ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
         xdata = np.tile(np.arange(self.settingsCache['waveformLength']), nwaves)
         singleConnected = np.ones(self.settingsCache['waveformLength'], dtype=np.int32)
         singleConnected[-1] = 0
         connected = np.tile(singleConnected, nwaves)
-        self.waves.setData(xdata, ydata, connect=connected)
+        self.waves[-1].setData(xdata, ydata, connect=connected)
     
     def updatePCView(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         # TODO: Handle creating more pcUnits objects if more units than exist
-        if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
-            for i in range(len(self.pcUnits)):
-                self.pcUnits[i].setData([0],[0])
+        if self.spikeDataModel._pc[ti][mi].shape[0] <= 1:
+            for pcu in self.pcUnits:
+                pcu.setData([],[])
             return
-        units = np.unique(self.spikeDataModel._spikes[ti][mi][:,1])
-        for i in range(len(units)):
-            rows = np.logical_and(
-                self.spikeDataModel._spikes[ti][mi][:,1] == units[i],
-                self.spikeDataModel._spikes[ti][mi][:,2] == 1
-                )
-            self.pcUnits[i].setData(
-                self.spikeDataModel._pc[ti][mi][rows,0], 
-                self.spikeDataModel._pc[ti][mi][rows,1]
-                )
+        unit = self.spikeDataModel._spikes[ti][mi][:,1]
+        valid = self.spikeDataModel._spikes[ti][mi][:,2] == 1
+        # Plot PC scores from each valid unit
+        for u in [int(x) for x in np.unique(unit)]:
+            mask = np.logical_and(valid, unit==u)
+            self.pcUnits[u].setData(self.spikeDataModel._pc[ti][mi][mask,0], self.spikeDataModel._pc[ti][mi][mask,1])
+        # Plot invalid PC scores, if they exist
+        mask = np.logical_not(valid)
+        if not np.any(mask):
+            return
+        self.pcUnits[-1].setData(self.spikeDataModel._pc[ti][mi][mask,0], self.spikeDataModel._pc[ti][mi][mask,1])
     
     def detectSpikes(self):
         print('detecting spikes')
@@ -242,7 +283,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if self.settingsCache['alignAt'] == 'local maxima':
             for i,ind in enumerate(inds):
                 wave = data[ind:ind+self.settingsCache['waveformLength']]
-                # wave = data[ind-self.settingsCache['waveformLength']:ind+self.settingsCache['waveformLength']]
                 spikeind = np.argmax(wave) + ind# - self.settingsCache['waveformLength']
                 wave = data[(spikeind-prespike):(spikeind+self.settingsCache['waveformLength']-prespike)]
                 spikes[i,0] = self.traceDataModel.get('time')[spikeind]
@@ -260,8 +300,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.muscleTableModel._data[trialIndex][muscleIndex][1] = len(inds)
         self.muscleTableModel.layoutChanged.emit()
         self.spikeDataModel.updatePCA((trialIndex, muscleIndex))
-        self.updateWaveView()
         self.updatePCView()
+        self.updateWaveView()
     
     def updateFilter(self):
         order = int(self.orderLineEdit.text())
@@ -363,7 +403,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.traces[ind].setData(self.traceDataModel.get('time'), self.traceDataModel.get(muscleNames[ind]) + i)
         # Clear unselected traces
         for ind in unselectedRowIndices:
-            self.traces[ind].setData([0],[0])
+            self.traces[ind].setData([],[])
         # Update Y axis
         yax = self.traceView.getAxis('left')
         yax.setTicks([[(i, muscleNames[j]) for i,j in enumerate(selectedRowIndices)],[]])
