@@ -91,11 +91,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.traceView.addItem(self.thresholdLine)
         self.thresholdLine.sigPositionChangeFinished.connect(self.thresholdChanged)
         # Waveform, spikes, PC plots 
-        # (for now assumes max of 12 units, quite dumb but rarely ever more than 2-3)
+        # For now assumes max of 10 units. Dumb but means units can be mapped to num keys
         self.waves = []
         self.spikes = []
         self.pcUnits = []
-        for i in range(12):
+        for i in range(10):
             self.waves.append(self.waveView.plot([],[], pen=pg.mkPen(unitColors[i])))
             self.spikes.append(self.spikeView.plot([],[], pen=pg.mkPen(unitColors[i])))
             self.pcUnits.append(
@@ -103,6 +103,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                     pen=None, symbolPen=None, 
                     symbol='o', symbolSize=3, symbolBrush=unitColors[i])
             )
+            # self.spikes[i].sigPointsClicked(self.)
         # Extra last entry for invalid spikes/waves/pc points
         self.waves.append(self.waveView.plot([],[], pen=pg.mkPen(invalidColor)))
         self.spikes.append(self.spikeView.plot([],[], pen=pg.mkPen(invalidColor)))
@@ -114,7 +115,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Spikes plot
         self.spikeView.setXLink(self.traceView)
         self.spikeView.showAxes(False)
-        
+        self.spikeView.setMouseEnabled(x=False, y=False)
         # Filter frequency response plot
         self.freqResponse = self.freqResponseView.plot([], [])
         self.freqResponseView.setLogMode(x=True, y=False)
@@ -124,7 +125,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         
         # Connect callback functions for trial/muscle view selection changes
         self.trialView.selectionModel().currentChanged.connect(self.trialSelectionChanged)
-        self.muscleView.selectionModel().selectionChanged.connect(self.updateTraceViewPlot)
+        self.muscleView.selectionModel().selectionChanged.connect(self.muscleSelectionChanged)
         self.muscleView.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         
         #--- Filter controls
@@ -274,6 +275,22 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             return
         self.pcUnits[-1].setData(self.spikeDataModel._pc[ti][mi][mask,0], self.spikeDataModel._pc[ti][mi][mask,1])
     
+    def updateTraceView(self):
+        selectedRowIndices = [item.row() for item in self.muscleView.selectionModel().selectedRows()]
+        unselectedRowIndices = [i for i in set(range(len(muscleNames))) if i not in selectedRowIndices]
+        # Plot selected traces
+        for i,ind in enumerate(selectedRowIndices):
+            self.traces[ind].setData(self.traceDataModel.get('time'), self.traceDataModel.get(muscleNames[ind]) + i)
+        # Clear unselected traces
+        for ind in unselectedRowIndices:
+            self.traces[ind].setData([],[])
+        # Update Y axis
+        yax = self.traceView.getAxis('left')
+        yax.setTicks([[(i, muscleNames[j]) for i,j in enumerate(selectedRowIndices)],[]])
+        # Set active index as one of the selected traces
+        if self._activeIndex not in selectedRowIndices and len(selectedRowIndices) > 0:
+            self.setActiveTrace(selectedRowIndices[0])
+    
     def detectSpikes(self):
         print('detecting spikes')
         muscleName = self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][0]
@@ -297,10 +314,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Remove inds that don't meet dead time requirements
         difinds = np.diff(inds)
         keepinds = np.full(inds.shape, True)
-        for i in range(len(inds)-1):
+        for i in range(len(difinds)-1):
             if difinds[i] <= self.settingsCache['deadTime']:
                 keepinds[i+1] = False
                 difinds[i+1] += difinds[i]
+        # Last one has to be done separately as there's no next diff to add to
+        keepinds[-1] = False if difinds[-1] <= self.settingsCache['deadTime'] else True
         inds = inds[keepinds,...]
         # Align each spike, save spike at each time
         # Spikes columns are [time, unit, valid, prespike, waveform...]
@@ -374,7 +393,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.traceDataModel.normalize(activeMuscle)
         self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][2] = not filtered
         self.muscleTableModel.layoutChanged.emit()
-        self.updateTraceViewPlot()
+        self.updateTraceView()
     
     # TODO: Could set to only move through currently displayed traces?
     def nextTrace(self):
@@ -423,22 +442,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         newvalue = self.thresholdLine.value() - (self.thresholdLine.bounds()[0] + 0.5)
         self.spikeDataModel._params[trialIndex][muscleIndex] = newvalue
     
-    def updateTraceViewPlot(self):
-        selectedRowIndices = [item.row() for item in self.muscleView.selectionModel().selectedRows()]
-        unselectedRowIndices = [i for i in set(range(len(muscleNames))) if i not in selectedRowIndices]
-        # Plot selected traces
-        for i,ind in enumerate(selectedRowIndices):
-            self.traces[ind].setData(self.traceDataModel.get('time'), self.traceDataModel.get(muscleNames[ind]) + i)
-        # Clear unselected traces
-        for ind in unselectedRowIndices:
-            self.traces[ind].setData([],[])
-        # Update Y axis
-        yax = self.traceView.getAxis('left')
-        yax.setTicks([[(i, muscleNames[j]) for i,j in enumerate(selectedRowIndices)],[]])
-        # Set active index as one of the selected traces
-        if self._activeIndex not in selectedRowIndices and len(selectedRowIndices) > 0:
-            self.setActiveTrace(selectedRowIndices[0])
-    
     def trialSelectionChanged(self, current, previous):
         self.muscleTableModel.setSelectedIndex(current.row())
         # Retrieve selected trial's data 
@@ -450,7 +453,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Grab first 11 channels (BIG ASSUMPTION: time + 10 muscles)
         channelNames = [column[0].lower() for column in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
         self.traceDataModel.setAll(channelNames[0:11], datamat[:,0:11])
-        self.updateTraceViewPlot()
+        self.updateTraceView()
+    
+    def muscleSelectionChanged(self):
+        self.updateTraceView()
+        self.updatePCView()
+        self.updateWaveView()
+        self.updateSpikeView()
     
     def onFileOpenClick(self):
         self._path_data = QFileDialog.getExistingDirectory(self, "Open Data Folder", "~")
