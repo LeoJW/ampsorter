@@ -5,7 +5,6 @@ import dill
 import datetime
 import os
 import scipy.io
-import time
 from scipy.signal import butter, cheby1, cheby2, ellip, sosfreqz
 import numpy as np
 from PyQt6 import QtCore, QtWidgets, uic
@@ -115,6 +114,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Spikes plot
         self.spikeView.setXLink(self.traceView)
         self.spikeView.showAxes(False)
+        self.spikeView.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.RectMode)
         self.spikeView.setMouseEnabled(x=False, y=False)
         # Filter frequency response plot
         self.freqResponse = self.freqResponseView.plot([], [])
@@ -143,6 +143,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.passbandRippleDBLineEdit.setValidator(QDoubleValidator(0, 100, 3, self))
         self.stopbandAttenDBLineEdit.setValidator(QDoubleValidator(0, 100, 3, self))
         
+        #--- Detection controls
+        self.detectSpikesButton.clicked.connect(self.detectSpikes)
+        self.undetectSpikesButton.clicked.connect(self.undetectSpikes)
         
         #--- Top toolbar menus
         menu = self.menuBar()
@@ -186,7 +189,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Alt+Up" : lambda: self.bumpThresholdUp(bump=0.05),
             "Alt+Down" : lambda: self.bumpThresholdDown(bump=0.05),
             "F" : self.filterTrace,
-            "Space" : self.detectSpikes
+            "Space" : self.detectSpikes,
+            "Shift+Space" : self.undetectSpikes
         }
         self.shortcuts = []
         for keycombo, keyfunc in self.shortcutDict.items():
@@ -345,6 +349,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.muscleTableModel._data[trialIndex][muscleIndex][1] = len(inds)
         self.muscleTableModel.layoutChanged.emit()
         self.spikeDataModel.updatePCA((trialIndex, muscleIndex))
+        self.updatePCView()
+        self.updateWaveView()
+        self.updateSpikeView()
+    
+    def undetectSpikes(self):
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        spikes = np.zeros((0, 4 + self.settingsCache['waveformLength']))
+        self.spikeDataModel._spikes[ti][mi] = spikes
+        self.muscleTableModel._data[ti][mi][1] = 0
+        self.muscleTableModel.layoutChanged.emit()
+        self.spikeDataModel.updatePCA((ti, mi))
         self.updatePCView()
         self.updateWaveView()
         self.updateSpikeView()

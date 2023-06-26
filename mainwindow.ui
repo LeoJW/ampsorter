@@ -64,6 +64,19 @@
          <string>Detect Spikes</string>
         </property>
        </widget>
+       <widget class="QPushButton" name="undetectSpikesButton">
+        <property name="geometry">
+         <rect>
+          <x>0</x>
+          <y>200</y>
+          <width>127</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Undetect Spikes</string>
+        </property>
+       </widget>
       </widget>
       <widget class="QWidget" name="tab_filter">
        <attribute name="title">

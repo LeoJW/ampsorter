@@ -18,6 +18,9 @@ class SpikeDataModel():
     def updateSpikes(self, data, index):
         self._spikes[index[0]][index[1]] = data
     def updatePCA(self, index):
+        if self._spikes[index[0]][index[1]].shape[0] <= 1:
+            self._pc[index[0]][index[1]] = np.empty((0, 2))
+            return
         pca = PCA(n_components=2)
         self._pc[index[0]][index[1]] = pca.fit_transform(self._spikes[index[0]][index[1]][:,4:])
 
