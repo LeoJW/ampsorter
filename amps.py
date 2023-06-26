@@ -59,6 +59,7 @@ unitColors = [
     '#ccebc5', '#ffed6f'
 ]
 invalidColor = QColor(110,110,110,200)
+unitKeys = ['0','1','2','3','4','5','6','7','8','9']
 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
@@ -115,6 +116,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.spikeView.setXLink(self.traceView)
         self.spikeView.showAxes(False)
         self.spikeView.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.RectMode)
+        self.spikeView.getPlotItem().getViewBox().sigSelectionReleased.connect(self.spikeSelection)
         self.spikeView.setMouseEnabled(x=False, y=False)
         # Filter frequency response plot
         self.freqResponse = self.freqResponseView.plot([], [])
@@ -197,6 +199,22 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
     
+    def spikeSelection(self, event):
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
+            return
+        lb, rb = event.rectCoords[0], event.rectCoords[2]
+        mask = np.logical_and(
+            self.spikeDataModel._spikes[ti][mi][:,0] >= lb,
+            self.spikeDataModel._spikes[ti][mi][:,0] <= rb)
+        if event.pressedKey in unitKeys:
+            self.spikeDataModel._spikes[ti][mi][mask,1] = int(event.pressedKey)
+        else:
+            self.spikeDataModel._spikes[ti][mi][mask,2] = np.logical_not(self.spikeDataModel._spikes[ti][mi][mask,2])
+        self.updatePCView()
+        self.updateWaveView()
+        self.updateSpikeView()
+    
     def updateSpikeView(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
@@ -209,8 +227,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         samplesPreSpike = self.spikeDataModel._spikes[ti][mi][0,3]
         xvec = (np.arange(0, self.settingsCache['waveformLength']) - samplesPreSpike) / int(self.traceDataModel._fs)
         # Plot valid spikes for each unit
-        for u in [int(x) for x in np.unique(unit)]:
+        for u in range(10):
             mask = np.logical_and(valid, unit==u)
+            if not np.any(mask):
+                self.spikes[u].setData([],[])
+                continue
             nwaves = sum(mask)
             xdata = np.hstack([xvec + t for t in self.spikeDataModel._spikes[ti][mi][mask,0]])
             ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
@@ -221,6 +242,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Plot invalid waveforms, if they exist
         mask = np.logical_not(valid)
         if not np.any(mask):
+            self.spikes[-1].setData([],[])
             return
         nwaves = sum(mask)
         ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
@@ -239,8 +261,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         unit = self.spikeDataModel._spikes[ti][mi][:,1]
         valid = self.spikeDataModel._spikes[ti][mi][:,2] == 1
         # Plot valid waveforms from each unit
-        for u in [int(x) for x in np.unique(unit)]:
+        for u in range(10):
             mask = np.logical_and(valid, unit==u)
+            if not np.any(mask):
+                self.waves[u].setData([],[])
+                continue
             nwaves = sum(mask)
             ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
             xdata = np.tile(np.arange(self.settingsCache['waveformLength']), nwaves)
@@ -262,7 +287,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def updatePCView(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
-        # TODO: Handle creating more pcUnits objects if more units than exist
         if self.spikeDataModel._pc[ti][mi].shape[0] <= 1:
             for pcu in self.pcUnits:
                 pcu.setData([],[])
@@ -270,8 +294,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         unit = self.spikeDataModel._spikes[ti][mi][:,1]
         valid = self.spikeDataModel._spikes[ti][mi][:,2] == 1
         # Plot PC scores from each valid unit
-        for u in [int(x) for x in np.unique(unit)]:
+        for u in range(10):
             mask = np.logical_and(valid, unit==u)
+            if not np.any(mask):
+                self.pcUnits[u].setData([],[])
+                continue
             self.pcUnits[u].setData(self.spikeDataModel._pc[ti][mi][mask,0], self.spikeDataModel._pc[ti][mi][mask,1])
         # Plot invalid PC scores, if they exist
         mask = np.logical_not(valid)
@@ -606,6 +633,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.settings.sync()
         self.save()
 
+def mouseDragEvent(ev):
+    ev.accept()  # accept all buttons
+    dif = (ev.pos() - ev.lastPos()) * -1
 
 app = QtWidgets.QApplication([])
 window = MainWindow()
