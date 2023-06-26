@@ -347,7 +347,7 @@
        <enum>Qt::Horizontal</enum>
       </property>
       <property name="sizeType">
-       <enum>QSizePolicy::Expanding</enum>
+       <enum>QSizePolicy::Minimum</enum>
       </property>
       <property name="sizeHint" stdset="0">
        <size>
@@ -447,7 +447,7 @@
      <widget class="PlotWidget" name="pcView" native="true"/>
     </item>
     <item row="2" column="1" colspan="7">
-     <widget class="SelectPlotWidget" name="spikeView" native="true">
+     <widget class="RectSelectPlotWidget" name="spikeView" native="true">
       <property name="sizePolicy">
        <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
         <horstretch>0</horstretch>
@@ -479,7 +479,7 @@
    <container>1</container>
   </customwidget>
   <customwidget>
-   <class>SelectPlotWidget</class>
+   <class>RectSelectPlotWidget</class>
    <extends>QWidget</extends>
    <header>selectplotwidget</header>
    <container>1</container>

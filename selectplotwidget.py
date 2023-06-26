@@ -3,7 +3,7 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore
 
 
-class SelectViewBox(pg.ViewBox):
+class RectSelectViewBox(pg.ViewBox):
     sigSelectionReleased = QtCore.Signal(object)
     
     def __init__(self):
@@ -36,7 +36,6 @@ class SelectViewBox(pg.ViewBox):
                     ## update shape of scale box
                     self.updateScaleBox(ev.buttonDownPos(), ev.pos())
         elif ev.button() & QtCore.Qt.MouseButton.RightButton:
-            #print "vb.rightDrag"
             if self.state['aspectLocked'] is not False:
                 mask[0] = 0
             dif = ev.screenPos() - ev.lastScreenPos()
@@ -56,10 +55,9 @@ class SelectViewBox(pg.ViewBox):
         ev.accept()
         if not ev.isAutoRepeat():
             self.pressedKey = ev.text()
-    # def keyReleaseEvent(self, ev):
-    #     if not ev.isAutoRepeat() and ev.text() in self.pressedKey:
-    #         self.pressedKey = ''
 
-class SelectPlotWidget(pg.PlotWidget):
+class RectSelectPlotWidget(pg.PlotWidget):
     def __init__(self, parent=None):
-        super(SelectPlotWidget, self).__init__(parent, viewBox=SelectViewBox())
+        super(RectSelectPlotWidget, self).__init__(parent, viewBox=RectSelectViewBox())
+
+# PolyLineROI; make new point if mouse location X distance from last point
