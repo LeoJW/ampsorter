@@ -117,7 +117,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.spikeView.showAxes(False)
         self.spikeView.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.RectMode)
         self.spikeView.getPlotItem().getViewBox().sigSelectionReleased.connect(self.spikeSelection)
-        self.spikeView.setMouseEnabled(x=False, y=False)
+        self.spikeView.setMouseEnabled(x=True, y=False)
         # Filter frequency response plot
         self.freqResponse = self.freqResponseView.plot([], [])
         self.freqResponseView.setLogMode(x=True, y=False)
@@ -462,8 +462,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if index in selectedRowIndices:
             newcenter = selectedRowIndices.index(index)
             newvalue = self.spikeDataModel._params[self.muscleTableModel.trialIndex][index]
-            self.thresholdLine.setValue(newcenter + newvalue)
             self.thresholdLine.setBounds((newcenter-0.5, newcenter+0.5))
+            self.thresholdLine.setValue(newcenter + newvalue)
+            self.thresholdLine.viewTransformChanged()
         self._activeIndex = index
         self.updatePCView()
         self.updateWaveView()
@@ -585,6 +586,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                         )
         except Exception:
             pass
+    
     def save(self):
         with open(os.path.join(self._path_amps, 'trial_params.json'), 'w') as f:
             data = {
