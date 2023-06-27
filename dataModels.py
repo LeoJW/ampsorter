@@ -15,7 +15,7 @@ class SpikeDataModel():
         self._params = [[paramDefault for _ in muscles] for _ in trials]
         self._funcs = [[lambda t,a: a for _ in muscles] for _ in trials]
         self._pc = [[np.empty((0, 2)) for _ in muscles] for _ in trials]
-        self._filters = [[0 for _ in muscles] for _ in trials]
+        self._filters = [[np.empty((0,0)) for _ in muscles] for _ in trials]
     def updateSpikes(self, data, index):
         self._spikes[index[0]][index[1]] = data
     def updatePCA(self, index):

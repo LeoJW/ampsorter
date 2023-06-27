@@ -187,14 +187,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Ctrl+S" : self.save,
             "Ctrl+Up" : self.nextTrace,
             "Ctrl+Down" : self.prevTrace,
-            "Ctrl+A" : self.autosetThresholds,
+            "Ctrl+Shift+A" : self.autosetThresholds,
             "Up" : self.bumpThresholdUp,
             "Down" : self.bumpThresholdDown,
             "Alt+Up" : lambda: self.bumpThresholdUp(bump=0.05),
             "Alt+Down" : lambda: self.bumpThresholdDown(bump=0.05),
-            "F" : self.filterActiveTrace,
+            "F" : self.filterTrace,
+            "Ctrl+Shift+F" : self.autosetFilters,
             "Space" : self.detectSpikes,
-            "Shift+Space" : self.undetectSpikes
+            "Alt+Space" : self.undetectSpikes
         }
         self.shortcuts = []
         for keycombo, keyfunc in self.shortcutDict.items():
@@ -205,8 +206,21 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.autosetThresholds()
     
     def autosetFilters(self):
-        # Get which (trial, muscles) have been filtered
-        print('hugfs')
+        # Get which (trial, muscles) have been filtered and detection run
+        detectMask = np.array([[arr.shape[0] > 1 for arr in sublist] for sublist in self.spikeDataModel._spikes])
+        filterMask = np.array([[row[2] for row in sublist] for sublist in self.muscleTableModel._data])
+        mask = np.logical_and(detectMask, filterMask)
+        if np.any(mask):
+            # Loop over muscles with filters applied
+            muscleinds = np.where(np.any(mask, axis=0))[0]
+            for mi in muscleinds:
+                # Apply the farthest trial's filter to the remaining trials
+                latestTrial = np.argmin(mask[:,mi], axis=0) - 1
+                sos = self.spikeDataModel._filters[latestTrial][mi]
+                for ti in np.arange(latestTrial, len(self.muscleTableModel._data)):
+                    self.muscleTableModel._data[ti][mi][2] = True
+                    self.spikeDataModel._filters[ti][mi] = sos
+        
     
     def autosetThresholds(self):
         # Get which trial+muscles have been detected on
@@ -444,19 +458,32 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if isinstance(self.sender(), QLineEdit):
             self.sender().clearFocus()
     
-    def filterActiveTrace(self):
-        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+    def filterTrace(self, ti=None, mi=None, sos=None, changeFlag=True, plotUpdate=True):
+        # Filter active trace with current filter by default
+        if ti == None or mi == None:
+            ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        if type(sos) is not np.ndarray:
+            sos = self._filtsos
         activeMuscle = self.muscleTableModel._data[ti][mi][0]
         filtered = self.muscleTableModel._data[ti][mi][2]
-        if filtered:
+        # Functon will either 
+        # 1) Change trace's flag to filtered or unfiltered and either restore or filter trace
+        # 2) Apply a filter to a trace without changing flag
+        if changeFlag and filtered:
             self.traceDataModel.restore(activeMuscle)
-        else:
-            self.spikeDataModel._filters[ti][mi] = self._filtsos
-            self.traceDataModel.filter(activeMuscle, self._filtsos)
+        elif changeFlag and not filtered:
+            self.spikeDataModel._filters[ti][mi] = sos
+            self.traceDataModel.filter(activeMuscle, sos)
             self.traceDataModel.normalize(activeMuscle)
-        self.muscleTableModel._data[ti][mi][2] = not filtered
-        self.muscleTableModel.layoutChanged.emit()
-        self.updateTraceView()
+        elif not changeFlag:
+            self.spikeDataModel._filters[ti][mi] = sos
+            self.traceDataModel.filter(activeMuscle, sos)
+            self.traceDataModel.normalize(activeMuscle)
+        if changeFlag:
+            self.muscleTableModel._data[ti][mi][2] = not filtered
+            self.muscleTableModel.layoutChanged.emit()
+        if plotUpdate:
+            self.updateTraceView()
     
     # TODO: Could set to only move through currently displayed traces?
     def nextTrace(self):
@@ -528,8 +555,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             mi = muscleNames.index(ch)
             thisfilt = self.spikeDataModel._filters[ti][mi]
             sos = self._filtsos if len(thisfilt) == 0 else thisfilt
-            self.traceDataModel.filter(ch, sos)
-            self.traceDataModel.normalize(ch)
+            self.filterTrace(ti=ti, mi=mi, sos=sos, changeFlag=False, plotUpdate=False)
         self.updateTraceView()
     
     def muscleSelectionChanged(self):
@@ -576,9 +602,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             trial_nums = [f[-7:-4] for f in trial_names]
             trials = sorted(zip(trial_nums, trial_names))
             # Generate fresh (muscle, nspike) array
-            muscle_table = [[[m, 0, False] for m in muscleNames] for i in range(len(trials))]
             self.trialListModel.trials = trials
-            self.muscleTableModel._data = muscle_table
+            self.muscleTableModel._data = [[[m, 0, False] for m in muscleNames] for i in range(len(trials))]
             self.spikeDataModel.create(trials, muscleNames, waveformLength=self.settingsCache['waveformLength'])
             self.save()
             self.trialListModel.layoutChanged.emit()
@@ -603,7 +628,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             with open(os.path.join(self._path_amps, 'detection_params.json'), 'r') as f:
                 data = json.load(f)
                 self.spikeDataModel._params = data['detectFuncParams']
-                self.spikeDataModel._filters = data['filters']
+                self.spikeDataModel._filters = [[np.array(arr) for arr in sublist] for sublist in data['filters']]
             with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'rb') as f:
                 self.spikeDataModel._funcs = dill.load(f)
             data = np.genfromtxt(
@@ -632,7 +657,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         with open(os.path.join(self._path_amps, 'detection_params.json'), 'w') as f:
             data = {
                 'detectFuncParams' : self.spikeDataModel._params,
-                'filters' : self.spikeDataModel._filters,
+                'filters' : [[arr.tolist() for arr in sublist] for sublist in self.spikeDataModel._filters],
                 'sorting date' : str(datetime.datetime.now()),
                 'amps version' : 'v0.1'
             }
