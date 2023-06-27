@@ -195,7 +195,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "F" : self.filterTrace,
             "Ctrl+Shift+F" : self.autosetFilters,
             "Space" : self.detectSpikes,
-            "Alt+Space" : self.undetectSpikes
+            "Alt+Space" : self.undetectSpikes,
+            "Ctrl+Shift+L" : self.autodetect
         }
         self.shortcuts = []
         for keycombo, keyfunc in self.shortcutDict.items():
@@ -204,6 +205,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def autodetect(self):
         self.autosetThresholds()
+        if self.autoApplyFiltersRadioButton.isChecked():
+            self.autosetFilters()
+        noDetectMask = np.array([[arr.shape[0] <= 1 for arr in sublist] for sublist in self.spikeDataModel._spikes])
+        for ti in range(noDetectMask.shape[0]):
+            self.trialSelectionChanged(ti, None)
+            for mi in range(noDetectMask.shape[1]):
+                self.setActiveTrace(mi)
+                self.detectSpikes()
     
     def autosetFilters(self):
         # Get which (trial, muscles) have been filtered and detection run
@@ -220,14 +229,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 for ti in np.arange(latestTrial, len(self.muscleTableModel._data)):
                     self.muscleTableModel._data[ti][mi][2] = True
                     self.spikeDataModel._filters[ti][mi] = sos
-        
     
     def autosetThresholds(self):
         # Get which trial+muscles have been detected on
         # This might assume all trials have same # of muscles
         detectionRun = np.array([[arr.shape[0] > 1 for arr in sublist] for sublist in self.spikeDataModel._spikes])
         params = np.array(self.spikeDataModel._params)
-        avgparam = params[detectionRun].mean(axis=0)
+        params[~detectionRun] = np.nan
+        avgparam = np.nanmean(params, axis=0)
+        avgparam[np.isnan(avgparam)] = 0.5 # set to default if none of this muscle ever set
         for i in range(params.shape[0]):
             for j in range(params.shape[1]):
                 self.spikeDataModel._params[i][j] = avgparam[j]
@@ -362,6 +372,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         func = self.spikeDataModel._funcs[trialIndex][muscleIndex]
         params = self.spikeDataModel._params[trialIndex][muscleIndex]
         data = self.traceDataModel.get(muscleName)
+        prespike = int(self.settingsCache['fractionPreAlign'] * self.settingsCache['waveformLength'])
         # If threshold is negative, flip both so we look for maximums
         # (Assumes params just single flat threshold)
         if params < 0:
@@ -375,6 +386,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Remove last "spike" if too close to end
         if (inds[-1] + self.settingsCache['waveformLength']) > len(data):
             inds = np.delete(inds, -1)
+        # Remove first "spikes" if too close to start
+        removeinds = inds < prespike
+        inds = inds[~removeinds,...]
         # Remove inds that don't meet dead time requirements
         difinds = np.diff(inds)
         keepinds = np.full(inds.shape, True)
@@ -388,7 +402,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Align each spike, save spike at each time
         # Spikes columns are [time, unit, valid, prespike, waveform...]
         spikes = np.zeros((len(inds), 4 + self.settingsCache['waveformLength']))
-        prespike = int(self.settingsCache['fractionPreAlign'] * self.settingsCache['waveformLength'])
         if self.settingsCache['alignAt'] == 'local maxima':
             for i,ind in enumerate(inds):
                 wave = data[ind:ind+self.settingsCache['waveformLength']]
@@ -397,7 +410,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 spikes[i,0] = self.traceDataModel.get('time')[spikeind]
                 spikes[i,2] = 1
                 spikes[i,3] = prespike
-                spikes[i,4:] = wave
+                try:
+                    spikes[i,4:] = wave
+                except:
+                    print(i)
+                    print(ind)
+                    print(len(data))
+                    print(spikes[i,4:])
+                    print(wave)
         elif self.settingsCache['alignAt'] == 'threshold crossing':
             for i,ind in enumerate(inds):
                 wave = data[(ind-prespike):(ind+self.settingsCache['waveformLength']-prespike)]
@@ -534,9 +554,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.spikeDataModel._params[trialIndex][muscleIndex] = newvalue
     
     def trialSelectionChanged(self, current, previous):
-        self.muscleTableModel.setSelectedIndex(current.row())
+        if isinstance(current, QtCore.QModelIndex):
+            index = current.row()
+        elif isinstance(current, int):
+            index = current
+        else:
+            raise ValueError("input variable current not a QModelIndex or int")
+        self.muscleTableModel.setSelectedIndex(index)
         # Retrieve selected trial's data 
-        trial_name = self.trialListModel.trials[current.row()][1]
+        trial_name = self.trialListModel.trials[index][1]
         fname = os.path.join(self._path_data, trial_name)
         file = scipy.io.loadmat(fname)
         # Grab data
@@ -550,7 +576,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if not np.any(filtered):
             self.updateTraceView()
             return
-        ti = current.row()
+        ti = index
         for ch in names[filtered]:
             mi = muscleNames.index(ch)
             thisfilt = self.spikeDataModel._filters[ti][mi]
