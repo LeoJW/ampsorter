@@ -15,6 +15,7 @@ class SpikeDataModel():
         self._params = [[paramDefault for _ in muscles] for _ in trials]
         self._funcs = [[lambda t,a: a for _ in muscles] for _ in trials]
         self._pc = [[np.empty((0, 2)) for _ in muscles] for _ in trials]
+        self._filters = [[0 for _ in muscles] for _ in trials]
     def updateSpikes(self, data, index):
         self._spikes[index[0]][index[1]] = data
     def updatePCA(self, index):
@@ -25,11 +26,10 @@ class SpikeDataModel():
         self._pc[index[0]][index[1]] = pca.fit_transform(self._spikes[index[0]][index[1]][:,4:])
 
 
-# TODO: Way to set single channels?
 class TraceDataModel():
     def __init__(self, channelNames=[''], matrix=np.zeros((1,1)), *args, **kwargs):
         self.setAll(channelNames, matrix)
-            
+    
     def setAll(self, channelNames, matrix):
         self._names = channelNames
         # Identify dimension of matrix that matches length of names

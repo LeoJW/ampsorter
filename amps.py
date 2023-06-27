@@ -192,7 +192,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Down" : self.bumpThresholdDown,
             "Alt+Up" : lambda: self.bumpThresholdUp(bump=0.05),
             "Alt+Down" : lambda: self.bumpThresholdDown(bump=0.05),
-            "F" : self.filterTrace,
+            "F" : self.filterActiveTrace,
             "Space" : self.detectSpikes,
             "Shift+Space" : self.undetectSpikes
         }
@@ -200,6 +200,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         for keycombo, keyfunc in self.shortcutDict.items():
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
+    
+    def autodetect(self):
+        self.autosetThresholds()
+    
+    def autosetFilters(self):
+        # Get which (trial, muscles) have been filtered
+        print('hugfs')
     
     def autosetThresholds(self):
         # Get which trial+muscles have been detected on
@@ -437,15 +444,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if isinstance(self.sender(), QLineEdit):
             self.sender().clearFocus()
     
-    def filterTrace(self):
-        activeMuscle = self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][0]
-        filtered = self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][2]
+    def filterActiveTrace(self):
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        activeMuscle = self.muscleTableModel._data[ti][mi][0]
+        filtered = self.muscleTableModel._data[ti][mi][2]
         if filtered:
             self.traceDataModel.restore(activeMuscle)
         else:
+            self.spikeDataModel._filters[ti][mi] = self._filtsos
             self.traceDataModel.filter(activeMuscle, self._filtsos)
             self.traceDataModel.normalize(activeMuscle)
-        self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][2] = not filtered
+        self.muscleTableModel._data[ti][mi][2] = not filtered
         self.muscleTableModel.layoutChanged.emit()
         self.updateTraceView()
     
@@ -508,6 +517,19 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Grab first 11 channels (BIG ASSUMPTION: time + 10 muscles)
         channelNames = [column[0].lower() for column in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
         self.traceDataModel.setAll(channelNames[0:11], datamat[:,0:11])
+        # Filter any channels that are already filtered (filtered data not stored, has to be applied when data loaded)
+        filtered = np.array([row[2] for row in self.muscleTableModel._data[self.muscleTableModel.trialIndex]])
+        names = np.array([sublist[0] for sublist in self.muscleTableModel._data[self.muscleTableModel.trialIndex]])
+        if not np.any(filtered):
+            self.updateTraceView()
+            return
+        ti = current.row()
+        for ch in names[filtered]:
+            mi = muscleNames.index(ch)
+            thisfilt = self.spikeDataModel._filters[ti][mi]
+            sos = self._filtsos if len(thisfilt) == 0 else thisfilt
+            self.traceDataModel.filter(ch, sos)
+            self.traceDataModel.normalize(ch)
         self.updateTraceView()
     
     def muscleSelectionChanged(self):
@@ -581,6 +603,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             with open(os.path.join(self._path_amps, 'detection_params.json'), 'r') as f:
                 data = json.load(f)
                 self.spikeDataModel._params = data['detectFuncParams']
+                self.spikeDataModel._filters = data['filters']
             with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'rb') as f:
                 self.spikeDataModel._funcs = dill.load(f)
             data = np.genfromtxt(
@@ -609,8 +632,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         with open(os.path.join(self._path_amps, 'detection_params.json'), 'w') as f:
             data = {
                 'detectFuncParams' : self.spikeDataModel._params,
+                'filters' : self.spikeDataModel._filters,
                 'sorting date' : str(datetime.datetime.now()),
-                'amps version' : 'v0.0'
+                'amps version' : 'v0.1'
             }
             json.dump(data, f, indent=4, separators=(',',':'))
         with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'wb') as f:
