@@ -148,6 +148,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         #--- Detection controls
         self.detectSpikesButton.clicked.connect(self.detectSpikes)
         self.undetectSpikesButton.clicked.connect(self.undetectSpikes)
+        self.autosetThresholdsButton.clicked.connect(self.autosetThresholds)
         
         #--- Top toolbar menus
         menu = self.menuBar()
@@ -186,6 +187,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Ctrl+S" : self.save,
             "Ctrl+Up" : self.nextTrace,
             "Ctrl+Down" : self.prevTrace,
+            "Ctrl+A" : self.autosetThresholds,
             "Up" : self.bumpThresholdUp,
             "Down" : self.bumpThresholdDown,
             "Alt+Up" : lambda: self.bumpThresholdUp(bump=0.05),
@@ -199,6 +201,16 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
     
+    def autosetThresholds(self):
+        # Get which trial+muscles have been detected on
+        # This might assume all trials have same # of muscles
+        detectionRun = np.array([[arr.shape[0] > 1 for arr in sublist] for sublist in self.spikeDataModel._spikes])
+        params = np.array(self.spikeDataModel._params)
+        avgparam = params[detectionRun].mean(axis=0)
+        for i in range(params.shape[0]):
+            for j in range(params.shape[1]):
+                self.spikeDataModel._params[i][j] = avgparam[j]
+        
     def spikeSelection(self, event):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
