@@ -55,7 +55,7 @@ unitColors = [
     '#d9d9d9', '#bc80bd',
     '#ccebc5', '#ffed6f'
 ]
-invalidColor = QColor(110,110,110,200)
+invalidColor = QColor(120,120,120,200)
 unitKeys = ['0','1','2','3','4','5','6','7','8','9']
 
 
@@ -107,7 +107,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.pcUnits.append(
             self.pcView.plot([],[], 
                 pen=None, symbolPen=None, 
-                symbol='o', symbolSize=1, symbolBrush=invalidColor)
+                symbol='o', symbolSize=3, symbolBrush=invalidColor)
         )
         # PC plot
         self.pcView.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.RectMode)
