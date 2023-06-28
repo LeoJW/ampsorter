@@ -29,11 +29,8 @@ from dataModels import *
 #TODO: Load from previous actually set up full state (current selected muscles and trials)
 
 # Main TODO:
-# - More relaxed/usable shortcuts for selection and filtering
-# - Add "detect run" column
+# - json files save if program is opened and then closed. Catch this and prevent
 # How can I set this up to toggle/stack different processing algorithms?
-# Implement flat inflines for each trace, xvalue relative to 0 stored
-# Implement detect spikes
 
 qt_creator_file = "mainwindow.ui"
 Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
@@ -410,14 +407,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 spikes[i,0] = self.traceDataModel.get('time')[spikeind]
                 spikes[i,2] = 1
                 spikes[i,3] = prespike
-                try:
-                    spikes[i,4:] = wave
-                except:
-                    print(i)
-                    print(ind)
-                    print(len(data))
-                    print(spikes[i,4:])
-                    print(wave)
+                spikes[i,4:] = wave
         elif self.settingsCache['alignAt'] == 'threshold crossing':
             for i,ind in enumerate(inds):
                 wave = data[(ind-prespike):(ind+self.settingsCache['waveformLength']-prespike)]
