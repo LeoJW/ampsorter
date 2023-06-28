@@ -193,12 +193,35 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Ctrl+Shift+F" : self.autosetFilters,
             "Space" : self.detectSpikes,
             "Alt+Space" : self.undetectSpikes,
-            "Ctrl+Shift+L" : self.autodetect
+            "Ctrl+Shift+L" : self.autodetect,
+            "Shift+Left" : self.panLeft,
+            "Shift+Right" : self.panRight,
+            "Shift+Up" : self.xZoomIn,
+            "Shift+Down" : self.xZoomOut
         }
         self.shortcuts = []
         for keycombo, keyfunc in self.shortcutDict.items():
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
+    
+    # Shift the trace view by default 5% of whatever the current range is
+    def panLeft(self, frac=0.05):
+        range = self.traceView.getPlotItem().viewRange()
+        shift = frac * (range[0][1] - range[0][0])
+        self.traceView.setXRange(range[0][0]-shift, range[0][1]-shift, padding=0)
+    def panRight(self, frac=0.05):
+        range = self.traceView.getPlotItem().viewRange()
+        shift = frac * (range[0][1] - range[0][0])
+        self.traceView.setXRange(range[0][0]+shift, range[0][1]+shift, padding=0)
+    # Zoom in or out on the x axis by default 5% of current range
+    def xZoomIn(self, frac=0.025):
+        range = self.traceView.getPlotItem().viewRange()
+        shift = frac * (range[0][1] - range[0][0])
+        self.traceView.setXRange(range[0][0]+shift, range[0][1]-shift, padding=0)
+    def xZoomOut(self, frac=0.025):
+        range = self.traceView.getPlotItem().viewRange()
+        shift = frac * (range[0][1] - range[0][0])
+        self.traceView.setXRange(range[0][0]-shift, range[0][1]+shift, padding=0)
     
     def autodetect(self):
         self.autosetThresholds()
@@ -481,6 +504,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # 2) Apply a filter to a trace without changing flag
         if changeFlag and filtered:
             self.traceDataModel.restore(activeMuscle)
+            self.traceDataModel.normalize(activeMuscle)
         elif changeFlag and not filtered:
             self.spikeDataModel._filters[ti][mi] = sos
             self.traceDataModel.filter(activeMuscle, sos)
