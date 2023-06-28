@@ -109,6 +109,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 pen=None, symbolPen=None, 
                 symbol='o', symbolSize=1, symbolBrush=invalidColor)
         )
+        # PC plot
+        self.pcView.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.RectMode)
+        self.pcView.getPlotItem().getViewBox().sigSelectionReleased.connect(self.pcSelection)
         # Spikes plot
         self.spikeView.setXLink(self.traceView)
         self.spikeView.showAxes(False)
@@ -270,6 +273,25 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         mask = np.logical_and(
             self.spikeDataModel._spikes[ti][mi][:,0] >= lb,
             self.spikeDataModel._spikes[ti][mi][:,0] <= rb)
+        if event.pressedKey in unitKeys:
+            self.spikeDataModel._spikes[ti][mi][mask,1] = int(event.pressedKey)
+        else:
+            self.spikeDataModel._spikes[ti][mi][mask,2] = np.logical_not(self.spikeDataModel._spikes[ti][mi][mask,2])
+        self.updatePCView()
+        self.updateWaveView()
+        self.updateSpikeView()
+    
+    def pcSelection(self, event):
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
+            return
+        xl, yl, xu, yu = event.rectCoords
+        # Get spikes within box
+        xdata = self.spikeDataModel._pc[ti][mi][:,0]
+        ydata = self.spikeDataModel._pc[ti][mi][:,1]
+        mask = (xdata > xl) & (xdata < xu) & (ydata > yl) & (ydata < yu)
+        if not np.any(mask):
+            return
         if event.pressedKey in unitKeys:
             self.spikeDataModel._spikes[ti][mi][mask,1] = int(event.pressedKey)
         else:
