@@ -216,12 +216,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         range = self.traceView.getPlotItem().viewRange()
         shift = frac * (range[0][1] - range[0][0])
         self.traceView.setXRange(range[0][0]+shift, range[0][1]+shift, padding=0)
-    # Zoom in or out on the x axis by default 5% of current range
-    def xZoomIn(self, frac=0.025):
+    # Zoom in or out on the x axis by default 10% of current range
+    def xZoomIn(self, frac=0.05):
         range = self.traceView.getPlotItem().viewRange()
         shift = frac * (range[0][1] - range[0][0])
         self.traceView.setXRange(range[0][0]+shift, range[0][1]-shift, padding=0)
-    def xZoomOut(self, frac=0.025):
+    def xZoomOut(self, frac=0.05):
         range = self.traceView.getPlotItem().viewRange()
         shift = frac * (range[0][1] - range[0][0])
         self.traceView.setXRange(range[0][0]-shift, range[0][1]+shift, padding=0)
@@ -627,7 +627,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.updateSpikeView()
     
     def onFileOpenClick(self):
-        self._path_data = QFileDialog.getExistingDirectory(self, "Open Data Folder", "~")
+        # Start one dir back from whatever last data dir was
+        startDirGuess = os.path.join(self.settings.value('last_paths', ['~'], str)[0], '..')
+        self._path_data = QFileDialog.getExistingDirectory(self, "Open Data Folder", startDirGuess)
         self.initializeDataDir()
     
     def onLoadPreviousClick(self):
@@ -748,9 +750,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             header=colNames + muscleScheme
         )
         print('file saved')
-    
-    def trial_clicked(self, index):
-        indexes = self.trialView.selectedIndexes()
     
     # Execute on app close
     def closeEvent(self, event):
