@@ -40,6 +40,7 @@ Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
 # Could set up to instead get names from files themselves
 # But premature optimization = root of all evil
 muscleNames = ['lax','lba','lsa','ldvm','ldlm','rdlm','rdvm','rsa','rba','rax']
+muscleNamesWithTime = ['time', *muscleNames]
 filtEnableColor = '#73A843'
 highlightColor = '#EEEEEE'
 muscleColors = {
@@ -608,11 +609,24 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         trial_name = self.trialListModel.trials[index][1]
         fname = os.path.join(self._path_data, trial_name)
         file = scipy.io.loadmat(fname)
-        # Grab data
-        datamat = file[trial_name[0:-4]][:,0:11]
-        # Grab first 11 channels (BIG ASSUMPTION: time + 10 muscles)
-        channelNames = [column[0].lower() for column in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
-        self.traceDataModel.setAll(channelNames[0:11], datamat[:,0:11])
+        matkeys = [s for s in file.keys()]
+        # Grab data, determine which DAQ program was used and cater to file structure of each
+        # Newer DAQ program
+        if 'data' in matkeys and 'channelNames' in matkeys:
+            channelNames = [s[0].lower() for s in file['channelNames'][0]]
+            desiredChannelsPresent = [n for n in muscleNamesWithTime if n in channelNames]
+            inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
+            datamat = file['data'][:,inds]
+        # Old DAQ program
+        elif trial_name[0:-4] in matkeys:
+            channelNames = [n[0].lower() for n in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
+            desiredChannelsPresent = [n for n in muscleNamesWithTime if n in channelNames]
+            inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
+            datamat = file[trial_name[0:-4]][:,inds]
+        else:
+            self.statusBar.showMessage('Cannot open files: These files do not match a format I know.', 3*statusBarDisplayTime)
+        self.traceDataModel.setAll(desiredChannelsPresent, datamat)
+        # TODO: Put trialListView in congruence with the above and populate off of what's present, rather than what's expected
         # Filter any channels that are already filtered (filtered data not stored, has to be applied when data loaded)
         filtered = np.array([row[2] for row in self.muscleTableModel._data[self.muscleTableModel.trialIndex]])
         names = np.array([sublist[0] for sublist in self.muscleTableModel._data[self.muscleTableModel.trialIndex]])
