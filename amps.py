@@ -51,8 +51,8 @@ muscleColors = {
     "ldlm": "#E87D7A", "rdlm": "#C14434"
 }
 unitColors = [
-    '#ffffff', '#8dd3c7', 
-    '#bebada', '#fb8072',
+    '#ffffff', '#bebada', 
+    '#8dd3c7', '#fb8072',
     '#80b1d3', '#fdb462',
     '#b3de69', '#fccde5',
     '#d9d9d9', '#bc80bd',
@@ -438,6 +438,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         crossvec = np.sign(func(self.traceDataModel.get('time'), params) - data)
         # Get where sign goes from +1 to -1
         inds = np.where(np.diff(crossvec) == -2.0)[0]
+        # Give up if no spikes found
+        if len(inds) == 0:
+            return
         # Remove last "spike" if too close to end
         if (inds[-1] + self.settingsCache['waveformLength']) > len(data):
             inds = np.delete(inds, -1)
@@ -459,9 +462,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         spikes = np.zeros((len(inds), 4 + self.settingsCache['waveformLength']))
         if self.settingsCache['alignAt'] == 'local maxima':
             for i,ind in enumerate(inds):
-                wave = data[ind:ind+self.settingsCache['waveformLength']]
-                spikeind = np.argmax(wave) + ind
-                wave = data[(spikeind-prespike):(spikeind+self.settingsCache['waveformLength']-prespike)]
+                initwave = data[ind:ind+self.settingsCache['waveformLength']]
+                spikeind = np.argmax(initwave) + ind
+                allspikeinds = np.arange(spikeind-prespike, spikeind+self.settingsCache['waveformLength']-prespike)
+                wave = data.take(allspikeinds, mode='clip')
                 spikes[i,0] = self.traceDataModel.get('time')[spikeind]
                 spikes[i,2] = 1
                 spikes[i,3] = prespike
@@ -647,6 +651,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             sos = self._filtsos if len(thisfilt) == 0 else thisfilt
             self.filterTrace(ti=ti, mi=mi, sos=sos, changeFlag=False, plotUpdate=False)
         self.updateTraceView()
+        self.updatePCView()
+        self.updateWaveView()
+        self.updateSpikeView()
     
     def muscleSelectionChanged(self):
         self.updateTraceView()
