@@ -30,6 +30,7 @@ from dataModels import *
 
 # Main TODO:
 # - json files save if program is opened and then closed. Catch this and prevent
+# - Changing waveform length in the middle of sorting leads to save issue; np.concatenate can't combine arrays of different shape
 # How can I set this up to toggle/stack different processing algorithms?
 
 qt_creator_file = "mainwindow.ui"
@@ -712,6 +713,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             pass
     
     def save(self):
+        # Don't save if nothing happened
+        if len(self.trialListModel.trials) == 0:
+            return
+        # Otherwise save all main paramters in different files
         with open(os.path.join(self._path_amps, 'trial_params.json'), 'w') as f:
             data = {
                 'trialListModel' : self.trialListModel.trials,
