@@ -369,6 +369,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Plot invalid waveforms, if they exist
         mask = np.logical_not(valid)
         if not np.any(mask):
+            self.waves[-1].setData([],[])
             return
         nwaves = sum(mask)
         ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
@@ -380,6 +381,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def updatePCView(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        # Re-run PCA if there are spikes but PCs are empty
+        if self.spikeDataModel._pc[ti][mi].shape[0] <= 1 and self.spikeDataModel._spikes[ti][mi].shape[0] > 1:
+            self.spikeDataModel.updatePCA((ti, mi))
         if self.spikeDataModel._pc[ti][mi].shape[0] <= 1:
             for pcu in self.pcUnits:
                 pcu.setData([],[])
@@ -396,6 +400,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Plot invalid PC scores, if they exist
         mask = np.logical_not(valid)
         if not np.any(mask):
+            self.pcUnits[-1].setData([],[])
             return
         self.pcUnits[-1].setData(self.spikeDataModel._pc[ti][mi][mask,0], self.spikeDataModel._pc[ti][mi][mask,1])
     
