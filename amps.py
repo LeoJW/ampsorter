@@ -20,7 +20,8 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import (
     QFileDialog,
     QHeaderView,
-    QLineEdit
+    QLineEdit,
+    QLabel
 )
 import pyqtgraph as pg
 from settingsDialog import *
@@ -58,6 +59,7 @@ unitColors = [
 ]
 invalidColor = QColor(120,120,120,200)
 unitKeys = ['0','1','2','3','4','5','6','7','8','9']
+statusBarDisplayTime = 1000 # ms
 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
@@ -175,6 +177,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         file_menu.addAction(load_action)
         settings_menu.addAction(settings_action)
         settings_menu.addSeparator()
+        
+        #--- Status bar
+        self.fileLabel = QLabel('')
+        self.statusBar.addPermanentWidget(self.fileLabel)
         
         #--- Settings dialog, main app settings
         self.settings = QtCore.QSettings('AgileSystemsLab', 'amps')
@@ -409,7 +415,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.setActiveTrace(selectedRowIndices[0])
     
     def detectSpikes(self):
-        print('detecting spikes')
+        self.statusBar.showMessage('detecting spikes', statusBarDisplayTime)
         muscleName = self.muscleTableModel._data[self.muscleTableModel.trialIndex][self._activeIndex][0]
         trialIndex, muscleIndex = self.muscleTableModel.trialIndex, self._activeIndex
         func = self.spikeDataModel._funcs[trialIndex][muscleIndex]
@@ -651,6 +657,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         }
     
     def initializeDataDir(self):
+        self.fileLabel.setText(os.path.basename(self._path_data))
         dir_contents = os.listdir(self._path_data)
         self._path_amps = os.path.join(self._path_data, 'amps')
         # If no dir for amps in data dir
@@ -754,7 +761,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             delimiter=',',
             header=colNames + muscleScheme
         )
-        print('file saved')
+        self.statusBar.showMessage('file saved', statusBarDisplayTime)
     
     # Execute on app close
     def closeEvent(self, event):
