@@ -617,6 +617,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             desiredChannelsPresent = [n for n in muscleNamesWithTime if n in channelNames]
             inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
             datamat = file['data'][:,inds]
+            # Normalize time
+            datamat[:,0] -= datamat[-1,0]
         # Old DAQ program
         elif trial_name[0:-4] in matkeys:
             channelNames = [n[0].lower() for n in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
