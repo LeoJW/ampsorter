@@ -116,7 +116,7 @@ class MuscleTableModel(QtCore.QAbstractTableModel):
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
             value = self._data[self.trialIndex][index.row()][index.column()]
             if isinstance(value, bool):
-                value = ''
+                value = None
             return value
         if role == QtCore.Qt.ItemDataRole.DecorationRole:
             value = self._data[self.trialIndex][index.row()][index.column()]

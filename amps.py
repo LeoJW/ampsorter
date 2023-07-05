@@ -122,6 +122,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.spikeView.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.RectMode)
         self.spikeView.getPlotItem().getViewBox().sigSelectionReleased.connect(self.spikeSelection)
         self.spikeView.setMouseEnabled(x=True, y=False)
+        
         # Filter frequency response plot
         self.freqResponse = self.freqResponseView.plot([], [])
         self.freqResponseView.setLogMode(x=True, y=False)
@@ -538,20 +539,31 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             sos = self._filtsos
         activeMuscle = self.muscleTableModel._data[ti][mi][0]
         filtered = self.muscleTableModel._data[ti][mi][2]
+        # String to display filter cutoffs
+        match self.passTypeComboBox.currentText():
+            case 'highpass':
+                wnString = self.highpassCutoffHzLineEdit.text() + '-_'
+            case 'lowpass':
+                wnString = '_-' + self.lowpassCutoffHzLineEdit.text()
+            case 'bandpass':
+                wnString = self.highpassCutoffHzLineEdit.text() + '-' + self.lowpassCutoffHzLineEdit.text()
         # Functon will either 
         # 1) Change trace's flag to filtered or unfiltered and either restore or filter trace
         # 2) Apply a filter to a trace without changing flag
         if changeFlag and filtered:
             self.traceDataModel.restore(activeMuscle)
             self.traceDataModel.normalize(activeMuscle)
+            self.muscleTableModel._data[ti][mi][3] = '_-_'
         elif changeFlag and not filtered:
             self.spikeDataModel._filters[ti][mi] = sos
             self.traceDataModel.filter(activeMuscle, sos)
             self.traceDataModel.normalize(activeMuscle)
+            self.muscleTableModel._data[ti][mi][3] = wnString
         elif not changeFlag:
             self.spikeDataModel._filters[ti][mi] = sos
             self.traceDataModel.filter(activeMuscle, sos)
             self.traceDataModel.normalize(activeMuscle)
+            self.muscleTableModel._data[ti][mi][3] = wnString
         if changeFlag:
             self.muscleTableModel._data[ti][mi][2] = not filtered
             self.muscleTableModel.layoutChanged.emit()
@@ -643,6 +655,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         names = np.array([sublist[0] for sublist in self.muscleTableModel._data[self.muscleTableModel.trialIndex]])
         if not np.any(filtered):
             self.updateTraceView()
+            self.updatePCView()
+            self.updateWaveView()
+            self.updateSpikeView()
             return
         ti = index
         for ch in names[filtered]:
@@ -703,7 +718,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             trials = sorted(zip(trial_nums, trial_names))
             # Generate fresh (muscle, nspike) array
             self.trialListModel.trials = trials
-            self.muscleTableModel._data = [[[m, 0, False] for m in muscleNames] for i in range(len(trials))]
+            self.muscleTableModel._data = [[[m, 0, False, '_-_'] for m in muscleNames] for i in range(len(trials))]
             self.spikeDataModel.create(trials, muscleNames, waveformLength=self.settingsCache['waveformLength'])
             self.save()
             self.trialListModel.layoutChanged.emit()
