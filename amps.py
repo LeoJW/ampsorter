@@ -51,13 +51,13 @@ muscleColors = {
     "ldlm": "#E87D7A", "rdlm": "#C14434"
 }
 unitColors = [
-    '#ffffff', '#bebada', 
-    '#8dd3c7', '#fb8072',
-    '#80b1d3', '#fdb462',
-    '#b3de69', '#fccde5',
-    '#d9d9d9', '#bc80bd',
-    '#ccebc5', '#ffed6f'
-]
+    '#ffffff', '#ebac23', 
+    '#b80058', '#008cf9',
+    '#006e00', '#00bbad',
+    '#d163e6', '#b24502',
+    '#ff9287', '#5954d6',
+    '#00c6f8', '#878500'
+] # 12 color palette from http://tsitsul.in/blog/coloropt/
 invalidColor = QColor(120,120,120,200)
 unitKeys = ['0','1','2','3','4','5','6','7','8','9']
 statusBarDisplayTime = 1000 # ms
@@ -135,6 +135,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.muscleView.selectionModel().selectionChanged.connect(self.muscleSelectionChanged)
         self.muscleView.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         
+        #--- Detection controls
+        self.detectSpikesButton.clicked.connect(self.detectSpikes)
+        self.undetectSpikesButton.clicked.connect(self.undetectSpikes)
+        self.autosetThresholdsButton.clicked.connect(self.autosetThresholds)
+        
+        #--- Unit controls
+        self.invalidateCrosstalkButton.clicked.connect(self.invalidateCrosstalk)
+        self.crosstalkWindowLineEdit.setValidator(QDoubleValidator(0.01, 50, 3, self))
+        self.crosstalkWindowLineEdit.editingFinished.connect(self.lineEditClearFocus)
+        self.crosstalkMuscleLineEdit.editingFinished.connect(self.lineEditClearFocus)
+        
         #--- Filter controls
         self.updateFilter()
         self.passTypeComboBox.currentTextChanged.connect(self.updateFilter)
@@ -149,11 +160,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.orderLineEdit.setValidator(QIntValidator(1, 20, self))
         self.passbandRippleDBLineEdit.setValidator(QDoubleValidator(0, 100, 3, self))
         self.stopbandAttenDBLineEdit.setValidator(QDoubleValidator(0, 100, 3, self))
-        
-        #--- Detection controls
-        self.detectSpikesButton.clicked.connect(self.detectSpikes)
-        self.undetectSpikesButton.clicked.connect(self.undetectSpikes)
-        self.autosetThresholdsButton.clicked.connect(self.autosetThresholds)
         
         #--- Top toolbar menus
         menu = self.menuBar()
@@ -206,6 +212,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Space" : self.detectSpikes,
             "Alt+Space" : self.undetectSpikes,
             "Ctrl+Shift+L" : self.autodetect,
+            "Ctrl+Shift+I" : self.invalidateCrosstalk,
             "Shift+Left" : self.panLeft,
             "Shift+Right" : self.panRight,
             "Shift+Up" : self.xZoomIn,
@@ -235,6 +242,42 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         shift = frac * (range[0][1] - range[0][0])
         self.traceView.setXRange(range[0][0]-shift, range[0][1]+shift, padding=0)
     
+    def lineEditClearFocus(self):
+        # Clear focus from LineEdit widgets
+        if isinstance(self.sender(), QLineEdit):
+            self.sender().clearFocus()
+    
+    def invalidateCrosstalk(self):
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        names = [sublist[0] for sublist in self.muscleTableModel._data[ti]]
+        targetName = self.crosstalkMuscleLineEdit.text()
+        targetIndex = names.index(targetName)
+        if targetName not in names:
+            self.statusBar.showMessage('target muscle name not in data', statusBarDisplayTime)
+            return
+        if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
+            self.statusBar.showMessage('No spikes in selected trace', statusBarDisplayTime)
+            return
+        if self.spikeDataModel._spikes[ti][targetIndex].shape[0] <= 1:
+            self.statusBar.showMessage('No spikes in target trace', statusBarDisplayTime)
+            return
+        self.statusBar.showMessage(
+            'Invalidating spikes in ' + names[mi] + ' overlapping with ' + targetName, 
+            2 * statusBarDisplayTime)
+        window = float(self.crosstalkWindowLineEdit.text()) / 1000
+        # Find spikes in selected muscle that occur within window of target muscle's spikes
+        targetSpikes = self.spikeDataModel._spikes[ti][targetIndex][:,0]
+        selectSpikes = self.spikeDataModel._spikes[ti][mi][:,0]
+        lowerBound = targetSpikes[:, np.newaxis] - window
+        upperBound = targetSpikes[:, np.newaxis] + window
+        inds = np.where((selectSpikes >= lowerBound) & (selectSpikes <= upperBound))
+        if len(inds[0]) == 0:
+            return
+        self.spikeDataModel._spikes[ti][mi][inds[1],2] = 0
+        self.updatePCView()
+        self.updateWaveView()
+        self.updateSpikeView()
+    
     def autodetect(self):
         self.autosetThresholds()
         if self.autoApplyFiltersRadioButton.isChecked():
@@ -258,9 +301,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 # Apply the farthest trial's filter to the remaining trials
                 latestTrial = np.argmin(mask[:,mi], axis=0) - 1
                 sos = self.spikeDataModel._filters[latestTrial][mi]
+                wnString = self.muscleTableModel._data[latestTrial][mi][3]
                 for ti in np.arange(latestTrial, len(self.muscleTableModel._data)):
                     self.muscleTableModel._data[ti][mi][2] = True
                     self.spikeDataModel._filters[ti][mi] = sos
+                    self.muscleTableModel._data[ti][mi][3] = wnString
     
     def autosetThresholds(self):
         # Get which trial+muscles have been detected on
@@ -440,7 +485,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Get where sign goes from +1 to -1
         inds = np.where(np.diff(crossvec) == -2.0)[0]
         # Give up if no spikes found
-        if len(inds) == 0:
+        if len(inds) <= 2:
             return
         # Remove last "spike" if too close to end
         if (inds[-1] + self.settingsCache['waveformLength']) > len(data):
@@ -473,7 +518,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 spikes[i,4:] = wave
         elif self.settingsCache['alignAt'] == 'threshold crossing':
             for i,ind in enumerate(inds):
-                wave = data[(ind-prespike):(ind+self.settingsCache['waveformLength']-prespike)]
+                allspikeinds = np.arange(ind-prespike, ind+self.settingsCache['waveformLength']-prespike)
+                wave = data.take(allspikeinds, mode='clip')
                 spikes[i,0] = self.traceDataModel.get('time')[ind]
                 spikes[i,2] = 1
                 spikes[i,3] = prespike
@@ -540,31 +586,32 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         activeMuscle = self.muscleTableModel._data[ti][mi][0]
         filtered = self.muscleTableModel._data[ti][mi][2]
         # String to display filter cutoffs
-        match self.passTypeComboBox.currentText():
-            case 'highpass':
-                wnString = self.highpassCutoffHzLineEdit.text() + '-_'
-            case 'lowpass':
-                wnString = '_-' + self.lowpassCutoffHzLineEdit.text()
-            case 'bandpass':
-                wnString = self.highpassCutoffHzLineEdit.text() + '-' + self.lowpassCutoffHzLineEdit.text()
+        if not filtered:
+            match self.passTypeComboBox.currentText():
+                case 'highpass':
+                    wnString = self.highpassCutoffHzLineEdit.text() + '-_'
+                case 'lowpass':
+                    wnString = '_-' + self.lowpassCutoffHzLineEdit.text()
+                case 'bandpass':
+                    wnString = self.highpassCutoffHzLineEdit.text() + '-' + self.lowpassCutoffHzLineEdit.text()
+        else:
+            wnString = '_-_'
         # Functon will either 
         # 1) Change trace's flag to filtered or unfiltered and either restore or filter trace
-        # 2) Apply a filter to a trace without changing flag
+        # 2) Apply a filter to a trace without changing flag (happens when re-applying pre-existing filter)
         if changeFlag and filtered:
             self.traceDataModel.restore(activeMuscle)
             self.traceDataModel.normalize(activeMuscle)
-            self.muscleTableModel._data[ti][mi][3] = '_-_'
         elif changeFlag and not filtered:
             self.spikeDataModel._filters[ti][mi] = sos
             self.traceDataModel.filter(activeMuscle, sos)
             self.traceDataModel.normalize(activeMuscle)
-            self.muscleTableModel._data[ti][mi][3] = wnString
         elif not changeFlag:
             self.spikeDataModel._filters[ti][mi] = sos
             self.traceDataModel.filter(activeMuscle, sos)
             self.traceDataModel.normalize(activeMuscle)
-            self.muscleTableModel._data[ti][mi][3] = wnString
         if changeFlag:
+            self.muscleTableModel._data[ti][mi][3] = wnString
             self.muscleTableModel._data[ti][mi][2] = not filtered
             self.muscleTableModel.layoutChanged.emit()
         if plotUpdate:
