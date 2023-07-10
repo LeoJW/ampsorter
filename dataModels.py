@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.signal import sosfiltfilt
-from sklearn.decomposition import PCA
 from PyQt6 import QtCore
 from PyQt6.QtGui import QColor
 
@@ -22,8 +21,16 @@ class SpikeDataModel():
         if self._spikes[index[0]][index[1]].shape[0] <= 1:
             self._pc[index[0]][index[1]] = np.empty((0, 2))
             return
-        pca = PCA(n_components=2)
-        self._pc[index[0]][index[1]] = pca.fit_transform(self._spikes[index[0]][index[1]][:,4:])
+        x = self._spikes[index[0]][index[1]][:,4:]
+        x -= np.mean(x, axis=0)
+        x /= np.std(x, axis=0)
+        cov = np.cov(x, rowvar=False, bias=True)
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        idx = np.argsort(eigvals)[::-1]
+        eigvecs = eigvecs[:,idx]
+        eigvals = eigvals[idx]
+        scores = np.dot(x, eigvecs)
+        self._pc[index[0]][index[1]] = scores[:,0:2]
 
 
 class TraceDataModel():
