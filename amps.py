@@ -142,9 +142,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         
         #--- Unit controls
         self.invalidateCrosstalkButton.clicked.connect(self.invalidateCrosstalk)
+        self.invalidateUnitButton.clicked.connect(self.invalidateUnit)
         self.crosstalkWindowLineEdit.setValidator(QDoubleValidator(0.01, 50, 3, self))
+        self.invalidateUnitLineEdit.setValidator(QIntValidator(0, 9, self))
         self.crosstalkWindowLineEdit.editingFinished.connect(self.lineEditClearFocus)
         self.crosstalkMuscleLineEdit.editingFinished.connect(self.lineEditClearFocus)
+        self.invalidateUnitLineEdit.editingFinished.connect(self.lineEditClearFocus)
         
         #--- Filter controls
         self.updateFilter()
@@ -246,6 +249,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Clear focus from LineEdit widgets
         if isinstance(self.sender(), QLineEdit):
             self.sender().clearFocus()
+    
+    def invalidateUnit(self):
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        targetUnit = int(self.invalidateUnitLineEdit.text())
+        mask = self.spikeDataModel._spikes[ti][mi][:,1] == targetUnit
+        if not np.any(mask):
+            return
+        self.spikeDataModel._spikes[ti][mi][mask,2] = np.logical_not(self.spikeDataModel._spikes[ti][mi][mask,2])
+        self.updatePCView()
+        self.updateWaveView()
+        self.updateSpikeView()
     
     def invalidateCrosstalk(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex

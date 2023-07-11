@@ -21,7 +21,7 @@ class SpikeDataModel():
         if self._spikes[index[0]][index[1]].shape[0] <= 1:
             self._pc[index[0]][index[1]] = np.empty((0, 2))
             return
-        x = self._spikes[index[0]][index[1]][:,4:]
+        x = np.copy(self._spikes[index[0]][index[1]][:,4:])
         x -= np.mean(x, axis=0)
         x /= np.std(x, axis=0)
         cov = np.cov(x, rowvar=False, bias=True)
