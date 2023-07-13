@@ -27,12 +27,9 @@ import pyqtgraph as pg
 from settingsDialog import *
 from dataModels import *
 
-#TODO: Load from previous actually set up full state (current selected muscles and trials)
-
 # Main TODO:
 # - json files save if program is opened and then closed. Catch this and prevent
 # - Changing waveform length in the middle of sorting leads to save issue; np.concatenate can't combine arrays of different shape
-# How can I set this up to toggle/stack different processing algorithms?
 
 qt_creator_file = "mainwindow.ui"
 Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
@@ -143,11 +140,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         #--- Unit controls
         self.invalidateCrosstalkButton.clicked.connect(self.invalidateCrosstalk)
         self.invalidateUnitButton.clicked.connect(self.invalidateUnit)
+        self.reassignButton.clicked.connect(self.reassignMuscle)
+        self.clearReassignmentsButton.clicked.connect(self.clearReassignments)
         self.crosstalkWindowLineEdit.setValidator(QDoubleValidator(0.01, 50, 3, self))
         self.invalidateUnitLineEdit.setValidator(QIntValidator(0, 9, self))
         self.crosstalkWindowLineEdit.editingFinished.connect(self.lineEditClearFocus)
         self.crosstalkMuscleLineEdit.editingFinished.connect(self.lineEditClearFocus)
         self.invalidateUnitLineEdit.editingFinished.connect(self.lineEditClearFocus)
+        self.reassignSourceLineEdit.editingFinished.connect(self.lineEditClearFocus)
+        self.reassignTargetLineEdit.editingFinished.connect(self.lineEditClearFocus)
         
         #--- Filter controls
         self.updateFilter()
@@ -249,6 +250,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Clear focus from LineEdit widgets
         if isinstance(self.sender(), QLineEdit):
             self.sender().clearFocus()
+    
+    def reassignMuscle(self):
+        sourceMuscle = self.reassignSourceLineEdit.text()
+        targetMuscle = self.reassignTargetLineEdit.text()
+        if (sourceMuscle not in muscleNames) or (targetMuscle not in muscleNames):
+            return
+        self.traceDataModel.setReplace(sourceMuscle, targetMuscle)
+        self.updateTraceView()
+    
+    def clearReassignments(self):
+        self.traceDataModel.clearReplace()
     
     def invalidateUnit(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex

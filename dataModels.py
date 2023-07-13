@@ -36,6 +36,7 @@ class SpikeDataModel():
 class TraceDataModel():
     def __init__(self, channelNames=[''], matrix=np.zeros((1,1)), *args, **kwargs):
         self.setAll(channelNames, matrix)
+        self._replaceMuscles = {}
     
     def setAll(self, channelNames, matrix):
         self._names = channelNames
@@ -62,8 +63,16 @@ class TraceDataModel():
             self._fs = 1 / np.mean(np.diff(self._maindata['time'][0:10]))
         else:
             self._fs = 1.0
+    def setReplace(self, source, target):
+        if source not in self._names or target not in self._names:
+            return
+        self._replaceMuscles[target] = source
+    def clearReplace(self):
+        self._replaceMuscles = {}
     def get(self, name):
         # Always return processed form, even if no processing
+        if name in self._replaceMuscles.keys():
+            name = self._replaceMuscles[name]
         return self._filtdata[name]
     def normalize(self, name=None):
         # Do all if no specific specified (except time!)
