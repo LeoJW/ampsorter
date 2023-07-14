@@ -73,6 +73,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.muscleView.setModel(self.muscleTableModel)
         self._path_data = os.path.dirname(os.path.abspath(__file__))
         self._path_amps = os.path.dirname(os.path.abspath(__file__))
+        self.reassignedMuscles = {}
         # Traces plot
         self._activeIndex = 0
         self.traces = []
@@ -257,9 +258,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if (sourceMuscle not in muscleNames) or (targetMuscle not in muscleNames):
             return
         self.traceDataModel.setReplace(sourceMuscle, targetMuscle)
+        self.reassignedMuscles[sourceMuscle] = targetMuscle
         self.updateTraceView()
     
+    def reassignFromDict(self, reassignDict):
+        if (not set(list(reassignDict.keys())).issubset(muscleNames)) or (not set(list(reassignDict.values())).issubset(muscleNames)):
+            return
+        for sourceMuscle in reassignDict.keys():
+            self.traceDataModel.setReplace(sourceMuscle, reassignDict[sourceMuscle])
+    
     def clearReassignments(self):
+        self.reassignedMuscles = {}
         self.traceDataModel.clearReplace()
     
     def invalidateUnit(self):
@@ -817,6 +826,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 data = json.load(f)
                 self.spikeDataModel._params = data['detectFuncParams']
                 self.spikeDataModel._filters = [[np.array(arr) for arr in sublist] for sublist in data['filters']]
+                self.reassignedMuscles = data['reassigned muscles']
+                self.reassignFromDict(self.reassignedMuscles)
             with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'rb') as f:
                 self.spikeDataModel._funcs = dill.load(f)
             data = np.genfromtxt(
@@ -848,10 +859,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             json.dump(data, f, indent=4, separators=(',',':'))
         with open(os.path.join(self._path_amps, 'detection_params.json'), 'w') as f:
             data = {
+                'reassigned muscles' : self.reassignedMuscles,
                 'detectFuncParams' : self.spikeDataModel._params,
                 'filters' : [[arr.tolist() for arr in sublist] for sublist in self.spikeDataModel._filters],
                 'sorting date' : str(datetime.datetime.now()),
-                'amps version' : 'v0.1'
+                'amps version' : 'v0.2'
             }
             json.dump(data, f, indent=4, separators=(',',':'))
         with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'wb') as f:
