@@ -57,7 +57,7 @@ unitColors = [
 ] # 12 color palette from http://tsitsul.in/blog/coloropt/
 invalidColor = QColor(120,120,120,200)
 unitKeys = ['0','1','2','3','4','5','6','7','8','9']
-statusBarDisplayTime = 1000 # ms
+statusBarDisplayTime = 3000 # ms
 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
@@ -137,6 +137,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.detectSpikesButton.clicked.connect(self.detectSpikes)
         self.undetectSpikesButton.clicked.connect(self.undetectSpikes)
         self.autosetThresholdsButton.clicked.connect(self.autosetThresholds)
+        self.autodetectButton.clicked.connect(self.autodetect)
         
         #--- Unit controls
         self.invalidateCrosstalkButton.clicked.connect(self.invalidateCrosstalk)
@@ -844,6 +845,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                             (i,j)
                         )
         except Exception:
+            self.statusBar.showMessage('Load failed, for some reason', statusBarDisplayTime)
             pass
     
     def save(self):

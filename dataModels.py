@@ -18,6 +18,8 @@ class SpikeDataModel():
     def updateSpikes(self, data, index):
         self._spikes[index[0]][index[1]] = data
     def updatePCA(self, index):
+        # Note that PCA here is effectively done using correlation matrix 
+        # (each variable divided by standard deviation), not covariance matrix
         if self._spikes[index[0]][index[1]].shape[0] <= 1:
             self._pc[index[0]][index[1]] = np.empty((0, 2))
             return
