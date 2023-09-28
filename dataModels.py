@@ -9,8 +9,9 @@ filtEnableColor = '#73A843'
 class SpikeDataModel():
     def create(self, trials, muscles, paramDefault=0.4, waveformLength=32):
         # Assumes every trial has the same muscles
-        # Spikes columns are [time, unit, valid, samples pre-spike, waveform...]
-        self._spikes = [[np.empty((0, 4 + waveformLength)) for _ in muscles] for _ in trials]
+        # Spikes columns were[time, unit, valid, samples pre-spike, waveform...]
+        # Spikes columns are [time, sample, unit, valid, samples pre-spike, waveform...]
+        self._spikes = [[np.empty((0, 5 + waveformLength)) for _ in muscles] for _ in trials]
         self._params = [[paramDefault for _ in muscles] for _ in trials]
         self._funcs = [[lambda t,a: a for _ in muscles] for _ in trials]
         self._pc = [[np.empty((0, 2)) for _ in muscles] for _ in trials]
@@ -23,7 +24,7 @@ class SpikeDataModel():
         if self._spikes[index[0]][index[1]].shape[0] <= 1:
             self._pc[index[0]][index[1]] = np.empty((0, 2))
             return
-        x = np.copy(self._spikes[index[0]][index[1]][:,4:])
+        x = np.copy(self._spikes[index[0]][index[1]][:,5:])
         x -= np.mean(x, axis=0)
         x /= np.std(x, axis=0)
         cov = np.cov(x, rowvar=False, bias=True)

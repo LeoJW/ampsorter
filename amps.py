@@ -222,12 +222,23 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Shift+Left" : self.panLeft,
             "Shift+Right" : self.panRight,
             "Shift+Up" : self.xZoomIn,
-            "Shift+Down" : self.xZoomOut
+            "Shift+Down" : self.xZoomOut,
+            "Ctrl+Shift+M" : self.match_times_and_samples
         }
         self.shortcuts = []
         for keycombo, keyfunc in self.shortcutDict.items():
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
+    
+    def match_times_and_samples(self):
+        muscles = [m[0] for m in self.muscleTableModel._data[0]]
+        trials = [t[0] for t in self.trialListModel.trials]
+        for i,trial in enumerate(trials):
+            self.trialSelectionChanged(i, None)
+            for j,muscle in enumerate(muscles):
+                t0 = self.traceDataModel.get('time')[0]
+                times = self.spikeDataModel._spikes[i][j][:,0] - t0
+                self.spikeDataModel._spikes[i][j][:,1] = (np.round(times, 4) * int(self.traceDataModel._fs)).astype(int)
     
     # Shift the trace view by default 5% of whatever the current range is
     def panLeft(self, frac=0.05):
@@ -275,10 +286,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def invalidateUnit(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         targetUnit = int(self.invalidateUnitLineEdit.text())
-        mask = self.spikeDataModel._spikes[ti][mi][:,1] == targetUnit
+        mask = self.spikeDataModel._spikes[ti][mi][:,2] == targetUnit
         if not np.any(mask):
             return
-        self.spikeDataModel._spikes[ti][mi][mask,2] = np.logical_not(self.spikeDataModel._spikes[ti][mi][mask,2])
+        self.spikeDataModel._spikes[ti][mi][mask,3] = np.logical_not(self.spikeDataModel._spikes[ti][mi][mask,3])
         self.updatePCView()
         self.updateWaveView()
         self.updateSpikeView()
@@ -309,7 +320,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         inds = np.where((selectSpikes >= lowerBound) & (selectSpikes <= upperBound))
         if len(inds[0]) == 0:
             return
-        self.spikeDataModel._spikes[ti][mi][inds[1],2] = 0
+        self.spikeDataModel._spikes[ti][mi][inds[1],3] = 0
         self.updatePCView()
         self.updateWaveView()
         self.updateSpikeView()
@@ -364,9 +375,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.spikeDataModel._spikes[ti][mi][:,0] >= lb,
             self.spikeDataModel._spikes[ti][mi][:,0] <= rb)
         if event.pressedKey in unitKeys:
-            self.spikeDataModel._spikes[ti][mi][mask,1] = int(event.pressedKey)
+            self.spikeDataModel._spikes[ti][mi][mask,2] = int(event.pressedKey)
         else:
-            self.spikeDataModel._spikes[ti][mi][mask,2] = np.logical_not(self.spikeDataModel._spikes[ti][mi][mask,2])
+            self.spikeDataModel._spikes[ti][mi][mask,3] = np.logical_not(self.spikeDataModel._spikes[ti][mi][mask,3])
         self.updatePCView()
         self.updateWaveView()
         self.updateSpikeView()
@@ -383,9 +394,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if not np.any(mask):
             return
         if event.pressedKey in unitKeys:
-            self.spikeDataModel._spikes[ti][mi][mask,1] = int(event.pressedKey)
+            self.spikeDataModel._spikes[ti][mi][mask,2] = int(event.pressedKey)
         else:
-            self.spikeDataModel._spikes[ti][mi][mask,2] = np.logical_not(self.spikeDataModel._spikes[ti][mi][mask,2])
+            self.spikeDataModel._spikes[ti][mi][mask,3] = np.logical_not(self.spikeDataModel._spikes[ti][mi][mask,3])
         self.updatePCView()
         self.updateWaveView()
         self.updateSpikeView()
@@ -396,10 +407,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             for sp in self.spikes:
                 sp.setData([], [], connect=np.array([1]))
             return
-        unit = self.spikeDataModel._spikes[ti][mi][:,1]
-        valid = self.spikeDataModel._spikes[ti][mi][:,2] == 1
+        unit = self.spikeDataModel._spikes[ti][mi][:,2]
+        valid = self.spikeDataModel._spikes[ti][mi][:,3] == 1
         # Assume samples pre spike same across all spike waveforms
-        samplesPreSpike = self.spikeDataModel._spikes[ti][mi][0,3]
+        samplesPreSpike = self.spikeDataModel._spikes[ti][mi][0,4]
         xvec = (np.arange(0, self.settingsCache['waveformLength']) - samplesPreSpike) / int(self.traceDataModel._fs)
         # Plot valid spikes for each unit
         for u in range(10):
@@ -409,7 +420,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 continue
             nwaves = sum(mask)
             xdata = np.hstack([xvec + t for t in self.spikeDataModel._spikes[ti][mi][mask,0]])
-            ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
+            ydata = self.spikeDataModel._spikes[ti][mi][mask, 5:].ravel()
             singleConnected = np.ones(self.settingsCache['waveformLength'], dtype=np.int32)
             singleConnected[-1] = 0
             connected = np.tile(singleConnected, nwaves)
@@ -420,7 +431,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.spikes[-1].setData([],[])
             return
         nwaves = sum(mask)
-        ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
+        ydata = self.spikeDataModel._spikes[ti][mi][mask, 5:].ravel()
         xdata = np.hstack([xvec + t for t in self.spikeDataModel._spikes[ti][mi][mask,0]])
         singleConnected = np.ones(self.settingsCache['waveformLength'], dtype=np.int32)
         singleConnected[-1] = 0
@@ -433,8 +444,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             for w in self.waves:
                 w.setData([], [], connect=np.array([1]))
             return
-        unit = self.spikeDataModel._spikes[ti][mi][:,1]
-        valid = self.spikeDataModel._spikes[ti][mi][:,2] == 1
+        unit = self.spikeDataModel._spikes[ti][mi][:,2]
+        valid = self.spikeDataModel._spikes[ti][mi][:,3] == 1
         # Plot valid waveforms from each unit
         for u in range(10):
             mask = np.logical_and(valid, unit==u)
@@ -442,7 +453,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 self.waves[u].setData([],[])
                 continue
             nwaves = sum(mask)
-            ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
+            ydata = self.spikeDataModel._spikes[ti][mi][mask, 5:].ravel()
             xdata = np.tile(np.arange(self.settingsCache['waveformLength']), nwaves)
             singleConnected = np.ones(self.settingsCache['waveformLength'], dtype=np.int32)
             singleConnected[-1] = 0
@@ -454,7 +465,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.waves[-1].setData([],[])
             return
         nwaves = sum(mask)
-        ydata = self.spikeDataModel._spikes[ti][mi][mask, 4:].ravel()
+        ydata = self.spikeDataModel._spikes[ti][mi][mask, 5:].ravel()
         xdata = np.tile(np.arange(self.settingsCache['waveformLength']), nwaves)
         singleConnected = np.ones(self.settingsCache['waveformLength'], dtype=np.int32)
         singleConnected[-1] = 0
@@ -470,8 +481,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             for pcu in self.pcUnits:
                 pcu.setData([],[])
             return
-        unit = self.spikeDataModel._spikes[ti][mi][:,1]
-        valid = self.spikeDataModel._spikes[ti][mi][:,2] == 1
+        unit = self.spikeDataModel._spikes[ti][mi][:,2]
+        valid = self.spikeDataModel._spikes[ti][mi][:,3] == 1
         # Plot PC scores from each valid unit
         for u in range(10):
             mask = np.logical_and(valid, unit==u)
@@ -540,8 +551,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         keepinds[-1] = False if difinds[-1] <= self.settingsCache['deadTime'] else True
         inds = inds[keepinds,...]
         # Align each spike, save spike at each time
-        # Spikes columns are [time, unit, valid, prespike, waveform...]
-        spikes = np.zeros((len(inds), 4 + self.settingsCache['waveformLength']))
+        # Spikes columns are [time, sample, unit, valid, prespike, waveform...]
+        spikes = np.zeros((len(inds), 5 + self.settingsCache['waveformLength']))
         if self.settingsCache['alignAt'] == 'local maxima':
             for i,ind in enumerate(inds):
                 initwave = data[ind:ind+self.settingsCache['waveformLength']]
@@ -549,17 +560,19 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 allspikeinds = np.arange(spikeind-prespike, spikeind+self.settingsCache['waveformLength']-prespike)
                 wave = data.take(allspikeinds, mode='clip')
                 spikes[i,0] = self.traceDataModel.get('time')[spikeind]
-                spikes[i,2] = 1
-                spikes[i,3] = prespike
-                spikes[i,4:] = wave
+                spikes[i,1] = spikeind
+                spikes[i,3] = 1
+                spikes[i,4] = prespike
+                spikes[i,5:] = wave
         elif self.settingsCache['alignAt'] == 'threshold crossing':
             for i,ind in enumerate(inds):
                 allspikeinds = np.arange(ind-prespike, ind+self.settingsCache['waveformLength']-prespike)
                 wave = data.take(allspikeinds, mode='clip')
                 spikes[i,0] = self.traceDataModel.get('time')[ind]
-                spikes[i,2] = 1
-                spikes[i,3] = prespike
-                spikes[i,4:] = wave
+                spikes[i,1] = spikeind
+                spikes[i,3] = 1
+                spikes[i,4] = prespike
+                spikes[i,5:] = wave
         self.spikeDataModel._spikes[trialIndex][muscleIndex] = spikes
         self.muscleTableModel._data[trialIndex][muscleIndex][1] = len(inds)
         self.muscleTableModel.layoutChanged.emit()
@@ -829,6 +842,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 self.spikeDataModel._filters = [[np.array(arr) for arr in sublist] for sublist in data['filters']]
                 self.reassignedMuscles = data['reassigned muscles']
                 self.reassignFromDict(self.reassignedMuscles)
+                loaded_version = data['amps version']
             with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'rb') as f:
                 self.spikeDataModel._funcs = dill.load(f)
             data = np.genfromtxt(
@@ -837,21 +851,26 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             )
             # Note: Muscles are numbered in numpy array according to their index/order in muscleTable
             # Assumes every trial for this folder follows same scheme as first trial
-            if len(data) != 0:
-                for i,trial in enumerate(trials):
-                    for j,muscle in enumerate(muscles):
+            if len(data) == 0:
+                raise Exception('spikes.txt has 0 rows of data')
+            # Versions before v0.3 didn't include spike sample/indices, drop in zeros instead
+            if float(loaded_version[1:]) < 0.3: 
+                data = np.hstack((data[:,0:3], np.zeros((data.shape[0],1)), data[:,3:]))
+            for i,trial in enumerate(trials):
+                for j,muscle in enumerate(muscles):
                         self.spikeDataModel.updateSpikes(
                             data[np.logical_and(data[:,0]==int(trial), data[:,1]==j), 2:],
                             (i,j)
                         )
-        except Exception:
-            self.statusBar.showMessage('Load failed, for some reason', statusBarDisplayTime)
+        except Exception as error:
+            self.statusBar.showMessage('Failed:' + repr(error), statusBarDisplayTime)
             pass
     
     def save(self):
         # Don't save if nothing happened
         if len(self.trialListModel.trials) == 0:
             return
+        self.statusBar.showMessage('Saving...', statusBarDisplayTime)
         # Otherwise save all main paramters in different files
         with open(os.path.join(self._path_amps, 'trial_params.json'), 'w') as f:
             data = {
@@ -864,8 +883,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 'reassigned muscles' : self.reassignedMuscles,
                 'detectFuncParams' : self.spikeDataModel._params,
                 'filters' : [[arr.tolist() for arr in sublist] for sublist in self.spikeDataModel._filters],
+                'sampling frequency' : self.traceDataModel._fs,
                 'sorting date' : str(datetime.datetime.now()),
-                'amps version' : 'v0.2'
+                'amps version' : 'v0.3'
             }
             json.dump(data, f, indent=4, separators=(',',':'))
         with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'wb') as f:
@@ -882,12 +902,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Create header with column names, muscle numbering scheme
         # Note: Muscles are numbered in numpy array according to their index/order in muscleTable
         # Assumes every trial for this folder follows same scheme as first trial
-        colNames = 'trial, muscle, time, unit, valid, prespike, waveform \n'
+        colNames = 'trial, muscle, time, sample, unit, valid, prespike, waveform \n'
         muscleScheme = ', '.join([str(i)+' = '+m[0] for (i,m) in enumerate(self.muscleTableModel._data[0])])
         np.savetxt(
             os.path.join(self._path_amps, 'spikes.txt'),
             savedata,
-            fmt = ('%u', '%u', '%.18f', '%u', '%u', '%u', *('%.16f' for _ in range(self.settingsCache['waveformLength']))),
+            fmt = ('%u', '%u', '%.18f', '%u', '%u', '%u', '%u', *('%.16f' for _ in range(self.settingsCache['waveformLength']))),
             delimiter=',',
             header=colNames + muscleScheme
         )
