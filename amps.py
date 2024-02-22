@@ -27,9 +27,19 @@ import pyqtgraph as pg
 from settingsDialog import *
 from dataModels import *
 
-# Main TODO:
-# - json files save if program is opened and then closed. Catch this and prevent
-# - Changing waveform length in the middle of sorting leads to save issue; np.concatenate can't combine arrays of different shape
+""" 
+Main TODO / bugs:
+- Save settings like alignAt to be specific to each individual, saved and loaded accordingly
+- json files save if program is opened and then closed immediately. Catch this and prevent
+- Changing waveform length in the middle of sorting leads to save issue; np.concatenate can't combine arrays of different shape
+- Dead time and other parameters implemented per muscle, rather than globally
+
+New Features to implement:
+- Keyboard shortcut for switching between trials
+- Lasso selection on PCA
+- Line selection on waveform plot
+
+"""
 
 qt_creator_file = "mainwindow.ui"
 Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
@@ -346,7 +356,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             muscleinds = np.where(np.any(mask, axis=0))[0]
             for mi in muscleinds:
                 # Apply the farthest trial's filter to the remaining trials
-                latestTrial = np.argmin(mask[:,mi], axis=0) - 1
+                # (found as the argmax of reversed vector)
+                latestTrial = mask.shape[0] - np.argmax(mask[::-1,mi]) - 1
+                print(latestTrial)
                 sos = self.spikeDataModel._filters[latestTrial][mi]
                 wnString = self.muscleTableModel._data[latestTrial][mi][3]
                 for ti in np.arange(latestTrial, len(self.muscleTableModel._data)):
@@ -569,7 +581,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 allspikeinds = np.arange(ind-prespike, ind+self.settingsCache['waveformLength']-prespike)
                 wave = data.take(allspikeinds, mode='clip')
                 spikes[i,0] = self.traceDataModel.get('time')[ind]
-                spikes[i,1] = spikeind
+                spikes[i,1] = ind
                 spikes[i,3] = 1
                 spikes[i,4] = prespike
                 spikes[i,5:] = wave
@@ -880,12 +892,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             json.dump(data, f, indent=4, separators=(',',':'))
         with open(os.path.join(self._path_amps, 'detection_params.json'), 'w') as f:
             data = {
+                'sorting date' : str(datetime.datetime.now()),
+                'amps version' : 'v0.3',
+                'sampling frequency' : self.traceDataModel._fs,
+                'aligned at' : self.settingsCache['alignAt'],
                 'reassigned muscles' : self.reassignedMuscles,
                 'detectFuncParams' : self.spikeDataModel._params,
-                'filters' : [[arr.tolist() for arr in sublist] for sublist in self.spikeDataModel._filters],
-                'sampling frequency' : self.traceDataModel._fs,
-                'sorting date' : str(datetime.datetime.now()),
-                'amps version' : 'v0.3'
+                'filters' : [[arr.tolist() for arr in sublist] for sublist in self.spikeDataModel._filters]
             }
             json.dump(data, f, indent=4, separators=(',',':'))
         with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'wb') as f:
