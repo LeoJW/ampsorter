@@ -9,7 +9,7 @@ filtEnableColor = '#73A843'
 class SpikeDataModel():
     def create(self, trials, muscles, paramDefault=0.4, waveformLength=32):
         # Assumes every trial has the same muscles
-        # Spikes columns were[time, unit, valid, samples pre-spike, waveform...]
+        # Spikes columns were in v0.2 [time, unit, valid, samples pre-spike, waveform...]
         # Spikes columns are [time, sample, unit, valid, samples pre-spike, waveform...]
         self._spikes = [[np.empty((0, 5 + waveformLength)) for _ in muscles] for _ in trials]
         self._params = [[paramDefault for _ in muscles] for _ in trials]
