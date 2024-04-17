@@ -5,6 +5,7 @@ import dill
 import datetime
 import os
 import scipy.io
+import h5py
 from scipy.signal import butter, cheby1, cheby2, ellip, sosfreqz
 import numpy as np
 from PyQt6 import QtCore, QtWidgets, uic
@@ -29,6 +30,9 @@ from dataModels import *
 
 """ 
 Main TODO / bugs:
+- Changing waveform length after save can result in further saves not working 
+    `np.vstack(savelist)` on line 915 tries to concatenate vectors of different lengths
+- Trial naming is VERY brittle. If first trial is missing end trial numbers, can throw out problems
 - Save settings like alignAt to be specific to each individual, saved and loaded accordingly
 - json files save if program is opened and then closed immediately. Catch this and prevent
 - Changing waveform length in the middle of sorting leads to save issue; np.concatenate can't combine arrays of different shape
@@ -358,7 +362,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 # Apply the farthest trial's filter to the remaining trials
                 # (found as the argmax of reversed vector)
                 latestTrial = mask.shape[0] - np.argmax(mask[::-1,mi]) - 1
-                print(latestTrial)
                 sos = self.spikeDataModel._filters[latestTrial][mi]
                 wnString = self.muscleTableModel._data[latestTrial][mi][3]
                 for ti in np.arange(latestTrial, len(self.muscleTableModel._data)):
@@ -726,6 +729,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         newvalue = self.thresholdLine.value() - (self.thresholdLine.bounds()[0] + 0.5)
         self.spikeDataModel._params[trialIndex][muscleIndex] = newvalue
     
+    # When a trial is selected all the data for that trial is loaded here
     def trialSelectionChanged(self, current, previous):
         if isinstance(current, QtCore.QModelIndex):
             index = current.row()
@@ -737,23 +741,32 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Retrieve selected trial's data 
         trial_name = self.trialListModel.trials[index][1]
         fname = os.path.join(self._path_data, trial_name)
-        file = scipy.io.loadmat(fname)
-        matkeys = [s for s in file.keys()]
-        # Grab data, determine which DAQ program was used and cater to file structure of each
-        # Newer DAQ program
-        if 'data' in matkeys and 'channelNames' in matkeys:
-            channelNames = [s[0].lower() for s in file['channelNames'][0]]
+        # Determine which DAQ program was used, newer .h5 or one of the older .mat
+        if '.h5' in fname:
+            file = h5py.File(fname, 'r')
+            channelNames = [n[0].lower().decode('utf-8') for n in file['names']]
             desiredChannelsPresent = [n for n in muscleNamesWithTime if n in channelNames]
             inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
-            datamat = file['data'][:,inds]
+            datamat = file['data'][inds,:].T
             # Normalize time
             datamat[:,0] -= datamat[-1,0]
-        # Old DAQ program
-        elif trial_name[0:-4] in matkeys:
-            channelNames = [n[0].lower() for n in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
-            desiredChannelsPresent = [n for n in muscleNamesWithTime if n in channelNames]
-            inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
-            datamat = file[trial_name[0:-4]][:,inds]
+        elif '.mat' in fname:
+            file = scipy.io.loadmat(fname)
+            matkeys = [s for s in file.keys()]
+            # 2023 DAQ program
+            if 'data' in matkeys and 'channelNames' in matkeys:
+                channelNames = [s[0].lower() for s in file['channelNames'][0]]
+                desiredChannelsPresent = [n for n in muscleNamesWithTime if n in channelNames]
+                inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
+                datamat = file['data'][:,inds]
+                # Normalize time
+                datamat[:,0] -= datamat[-1,0]
+            # Pre-2022 DAQ program
+            elif trial_name[0:-4] in matkeys:
+                channelNames = [n[0].lower() for n in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
+                desiredChannelsPresent = [n for n in muscleNamesWithTime if n in channelNames]
+                inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
+                datamat = file[trial_name[0:-4]][:,inds]
         else:
             self.statusBar.showMessage('Cannot open files: These files do not match a format I know.', 3*statusBarDisplayTime)
         self.traceDataModel.setAll(desiredChannelsPresent, datamat)
@@ -817,12 +830,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             os.mkdir(self._path_amps)
             # Grab list of trials
             trial_names = [f for f in dir_contents
-                    if '.mat' in f 
+                    if '.mat' in f or '.h5' in f
+                    if 'twitch' not in f
                     if 'FT' not in f
                     if 'Control' not in f
                     if 'quiet' not in f
                     if 'empty' not in f]
-            trial_nums = [f[-7:-4] for f in trial_names]
+            trial_nums = [f.split('.')[0][-3:] for f in trial_names]
             trials = sorted(zip(trial_nums, trial_names))
             # Generate fresh (muscle, nspike) array
             self.trialListModel.trials = trials
