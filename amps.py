@@ -294,8 +294,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.traceDataModel.setReplace(sourceMuscle, reassignDict[sourceMuscle])
     
     def clearReassignments(self):
+        for targetMuscle in self.reassignedMuscles.values():
+            self.traceDataModel.clearReplace(targetMuscle)
         self.reassignedMuscles = {}
-        self.traceDataModel.clearReplace()
+        self.updateTraceView()
     
     def invalidateUnit(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex

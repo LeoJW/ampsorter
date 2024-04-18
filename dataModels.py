@@ -70,12 +70,12 @@ class TraceDataModel():
         if source not in self._names or target not in self._names:
             return
         self._replaceMuscles[target] = source
-    def clearReplace(self):
+        self._filtdata[target] = self._maindata[source]
+    def clearReplace(self, target):
+        self._filtdata[target] = self._maindata[target]
         self._replaceMuscles = {}
     def get(self, name):
         # Always return processed form, even if no processing
-        if name in self._replaceMuscles.keys():
-            name = self._replaceMuscles[name]
         return self._filtdata[name]
     def normalize(self, name=None):
         # Do all if no specific specified (except time!)
@@ -101,7 +101,10 @@ class TraceDataModel():
         if isinstance(name, str):
             name = [name]
         for n in name:
-            self._filtdata[n] = self._maindata[n]
+            if n in self._replaceMuscles.keys():
+                self._filtdata[n] = self._maindata[self._replaceMuscles[n]]
+            else:
+                self._filtdata[n] = self._maindata[n]
 
 
 class TrialListModel(QtCore.QAbstractListModel):
