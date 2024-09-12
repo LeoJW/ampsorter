@@ -237,13 +237,47 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Shift+Right" : self.panRight,
             "Shift+Up" : self.xZoomIn,
             "Shift+Down" : self.xZoomOut,
-            "Ctrl+Shift+M" : self.match_times_and_samples
+            "Ctrl+Shift+M" : self.match_times_and_samples,
+            "Alt+Up" : self.change_instance_down,
+            "Alt+Down" : self.change_instance_up
+
         }
         self.shortcuts = []
         for keycombo, keyfunc in self.shortcutDict.items():
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
     
+
+    def change_instance_down(self):
+        current = self.muscleTableModel.trialIndex
+        updated = current - 1
+        lenght = len(self.trialListModel.trials)
+        index = self.trialListModel.createIndex(updated, 0)
+        maxIndex = self.trialListModel.createIndex(lenght,0)
+        if updated >= 0:
+            self.trialSelectionChanged(updated, current)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+            print(updated)
+        else:
+            self.trialSelectionChanged(maxIndex, current)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+            print("back to the back")
+
+    def change_instance_up(self):
+        current = self.muscleTableModel.trialIndex
+        updated = current + 1
+        lenght = len(self.trialListModel.trials)
+        index = self.trialListModel.createIndex(updated, 0)
+        zeroIndex = self.trialListModel.createIndex(0,0)
+        if current <= lenght:
+            self.trialSelectionChanged(updated,current)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+            print("done")
+        else:
+            self.trialSelectionChanged(zeroIndex, current)
+            self.trialView.selectionModel().select(zeroIndex, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+            print("back to the front")
+
     def match_times_and_samples(self):
         muscles = [m[0] for m in self.muscleTableModel._data[0]]
         trials = [t[0] for t in self.trialListModel.trials]
