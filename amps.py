@@ -239,6 +239,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Shift+Up" : self.xZoomIn,
             "Shift+Down" : self.xZoomOut,
             "Ctrl+Shift+M" : self.match_times_and_samples,
+            "Shift+L" : self.switch_trial_down,
+            "Shift+J" : self.switch_trial_up,
             "W" : self.change_instance_down,
             "S" : self.change_instance_up,
             "I" : lambda: self.changePCViewX(0),
@@ -254,6 +256,28 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         for keycombo, keyfunc in self.shortcutDict.items():
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
+    
+    def switch_trial_down(self):
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        if(ti == len(self.trialListModel.trials) - 1):
+            self.trialSelectionChanged(0, ti)
+            index = self.trialListModel.createIndex(0, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+        else:
+            self.trialSelectionChanged(ti + 1, ti)
+            index = self.trialListModel.createIndex(ti+1, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+    def switch_trial_up(self):
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        if(ti == 0):
+            self.trialSelectionChanged(len(self.trialListModel.trials) - 1, ti)
+            index = self.trialListModel.createIndex(len(self.trialListModel.trials) - 1, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+        else:
+            self.trialSelectionChanged(ti - 1, ti)
+            index = self.trialListModel.createIndex(ti - 1, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+
 
     def changePCViewX(self, view):
         self.activePC[0] = view
