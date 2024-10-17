@@ -186,13 +186,16 @@
        <enum>QTabWidget::Rounded</enum>
       </property>
       <property name="currentIndex">
-       <number>1</number>
+       <number>3</number>
       </property>
       <property name="iconSize">
        <size>
         <width>16</width>
         <height>16</height>
        </size>
+      </property>
+      <property name="usesScrollButtons">
+       <bool>false</bool>
       </property>
       <widget class="QWidget" name="tabDetect">
        <attribute name="title">
@@ -497,7 +500,7 @@
           <x>0</x>
           <y>70</y>
           <width>201</width>
-          <height>16</height>
+          <height>16</height
          </rect>
         </property>
         <property name="frameShadow">
@@ -540,7 +543,7 @@
           <x>0</x>
           <y>0</y>
           <width>201</width>
-          <height>181</height>
+          <height>212</height>
          </rect>
         </property>
         <layout class="QFormLayout" name="formLayout">
@@ -775,6 +778,43 @@
           <width>191</width>
           <height>71</height>
          </rect>
+        </property>
+       </widget>
+      </widget>
+      <widget class="QWidget" name="tabPCA">
+       <attribute name="title">
+        <string>PC</string>
+       </attribute>
+       <widget class="QLineEdit" name="pcaXValueInput">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>10</y>
+          <width>81</width>
+          <height>22</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="placeholderText">
+         <string>PC x-value</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="pcaYValueInput">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>30</y>
+          <width>81</width>
+          <height>22</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="placeholderText">
+         <string>PC y-value</string>
         </property>
        </widget>
       </widget>
