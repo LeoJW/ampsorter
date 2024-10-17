@@ -73,7 +73,6 @@ invalidColor = QColor(120,120,120,200)
 unitKeys = ['0','1','2','3','4','5','6','7','8','9']
 statusBarDisplayTime = 3000 # ms
 
-
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def __init__(self):
         QtWidgets.QMainWindow.__init__(self)
@@ -88,6 +87,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self._path_data = os.path.dirname(os.path.abspath(__file__))
         self._path_amps = os.path.dirname(os.path.abspath(__file__))
         self.reassignedMuscles = {}
+        self.activePC = np.array([0,1])
+        
         # Traces plot
         self._activeIndex = 0
         self.traces = []
@@ -230,7 +231,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "F" : self.filterTrace,
             "Ctrl+Shift+F" : self.autosetFilters,
             "Space" : self.detectSpikes,
-            "Alt+Space" : self.undetectSpikes,
+            "Shift+Space" : self.undetectSpikes, 
             "Ctrl+Shift+L" : self.autodetect,
             "Ctrl+Shift+I" : self.invalidateCrosstalk,
             "Shift+Left" : self.panLeft,
@@ -238,30 +239,46 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Shift+Up" : self.xZoomIn,
             "Shift+Down" : self.xZoomOut,
             "Ctrl+Shift+M" : self.match_times_and_samples,
-            "Alt+Up" : self.change_instance_down,
-            "Alt+Down" : self.change_instance_up
-
+            "W" : self.change_instance_down,
+            "S" : self.change_instance_up,
+            "I" : lambda: self.changePCViewX(0),
+            "O" : lambda: self.changePCViewX(1),
+            "P" : lambda: self.changePCViewX(2),
+            "J" : lambda: self.changePCViewY(0),
+            "K" : lambda: self.changePCViewY(1),
+            "L" : lambda: self.changePCViewY(2),
         }
+
+
         self.shortcuts = []
         for keycombo, keyfunc in self.shortcutDict.items():
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
-    
+
+    def changePCViewX(self, view):
+        self.activePC[0] = view
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        self.spikeDataModel.updatePCA((ti,mi), self.activePC)
+        self.updatePCView()
+
+    def changePCViewY(self, view):
+        self.activePC[1] = view
+        ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
+        self.spikeDataModel.updatePCA((ti,mi), self.activePC)
+        self.updatePCView()
 
     def change_instance_down(self):
         current = self.muscleTableModel.trialIndex
         updated = current - 1
-        lenght = len(self.trialListModel.trials)
+        length = len(self.trialListModel.trials)
         index = self.trialListModel.createIndex(updated, 0)
-        maxIndex = self.trialListModel.createIndex(lenght,0)
+        maxIndex = self.trialListModel.createIndex(length,0)
         if updated >= 0:
             self.trialSelectionChanged(updated, current)
             self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
-            print(updated)
         else:
             self.trialSelectionChanged(maxIndex, current)
             self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
-            print("back to the back")
 
     def change_instance_up(self):
         current = self.muscleTableModel.trialIndex
@@ -272,11 +289,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if current <= lenght:
             self.trialSelectionChanged(updated,current)
             self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
-            print("done")
         else:
             self.trialSelectionChanged(zeroIndex, current)
             self.trialView.selectionModel().select(zeroIndex, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
-            print("back to the front")
 
     def match_times_and_samples(self):
         muscles = [m[0] for m in self.muscleTableModel._data[0]]
@@ -439,8 +454,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             return
         xl, yl, xu, yu = event.rectCoords
         # Get spikes within box
-        xdata = self.spikeDataModel._pc[ti][mi][:,0]
-        ydata = self.spikeDataModel._pc[ti][mi][:,1]
+        xdata = self.spikeDataModel._pc[ti][mi][:,self.activePCX]
+        ydata = self.spikeDataModel._pc[ti][mi][:,self.activePCY]
         mask = (xdata > xl) & (xdata < xu) & (ydata > yl) & (ydata < yu)
         if not np.any(mask):
             return
@@ -527,14 +542,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         # Re-run PCA if there are spikes but PCs are empty
         if self.spikeDataModel._pc[ti][mi].shape[0] <= 1 and self.spikeDataModel._spikes[ti][mi].shape[0] > 1:
-            self.spikeDataModel.updatePCA((ti, mi))
+            self.spikeDataModel.updatePCA((ti,mi), self.activePC)
         if self.spikeDataModel._pc[ti][mi].shape[0] <= 1:
             for pcu in self.pcUnits:
                 pcu.setData([],[])
             return
         unit = self.spikeDataModel._spikes[ti][mi][:,2]
         valid = self.spikeDataModel._spikes[ti][mi][:,3] == 1
-        # Plot PC scores from each valid unit
+        # Plot PC scores from each valid unitF
         for u in range(10):
             mask = np.logical_and(valid, unit==u)
             if not np.any(mask):
@@ -627,7 +642,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.spikeDataModel._spikes[trialIndex][muscleIndex] = spikes
         self.muscleTableModel._data[trialIndex][muscleIndex][1] = len(inds)
         self.muscleTableModel.layoutChanged.emit()
-        self.spikeDataModel.updatePCA((trialIndex, muscleIndex))
+        self.spikeDataModel.updatePCA((trialIndex, muscleIndex), self.activePC)
         self.updatePCView()
         self.updateWaveView()
         self.updateSpikeView()
@@ -638,7 +653,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.spikeDataModel._spikes[ti][mi] = spikes
         self.muscleTableModel._data[ti][mi][1] = 0
         self.muscleTableModel.layoutChanged.emit()
-        self.spikeDataModel.updatePCA((ti, mi))
+        self.spikeDataModel.updatePCA((ti,mi), self.activePC)
         self.updatePCView()
         self.updateWaveView()
         self.updateSpikeView()
