@@ -182,6 +182,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.passbandRippleDBLineEdit.setValidator(QDoubleValidator(0, 100, 3, self))
         self.stopbandAttenDBLineEdit.setValidator(QDoubleValidator(0, 100, 3, self))
         
+        #--- PC Controls
+        self.pcaXValueInput.setValidator(QIntValidator(1,32,self))
+        self.pcaYValueInput.setValidator(QIntValidator(1,32,self))
+        self.pcaXValueInput.editingFinished.connect(self.setPCManual)
+        self.pcaYValueInput.editingFinished.connect(self.setPCManual)
+
         #--- Top toolbar menus
         menu = self.menuBar()
         open_action = QAction("Open", self)
@@ -290,6 +296,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         self.spikeDataModel.updatePCA((ti,mi), self.activePC)
         self.updatePCView()
+
+    def setPCManual(self):
+        PCX = int(self.pcaXValueInput.text())
+        PCY = int(self.pcaYValueInput.text())
+        self.changePCViewX(PCX)
+        self.changePCViewY(PCY)
+        print("done")
+
+
 
     def change_instance_down(self):
         current = self.muscleTableModel.trialIndex
@@ -893,7 +908,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             'alignAt' : self.settings.value('alignAt', 'local maxima'),
             'deadTime' : int(self.settings.value('deadTime', '10')),
             'fractionPreAlign' : float(self.settings.value('fractionPreAlign', '0.2'))
-        }
+        }#if waveform length change update spike
     
     def initializeDataDir(self):
         self.fileLabel.setText(os.path.basename(self._path_data))
