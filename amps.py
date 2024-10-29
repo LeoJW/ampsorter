@@ -6,6 +6,7 @@ import datetime
 import os
 import scipy.io
 import h5py
+from mainwindowui import Ui_MainWindow
 from scipy.signal import butter, cheby1, cheby2, ellip, sosfreqz
 import numpy as np
 from PyQt6 import QtCore, QtWidgets, uic
@@ -44,9 +45,6 @@ New Features to implement:
 - Line selection on waveform plot
 
 """
-
-qt_creator_file = "mainwindow.ui"
-Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
 
 # Could set up to instead get names from files themselves
 # But premature optimization = root of all evil
@@ -298,13 +296,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.updatePCView()
 
     def setPCManual(self):
-        PCX = int(self.pcaXValueInput.text())
-        PCY = int(self.pcaYValueInput.text())
+        PCX = int(self.pcaXValueInput.text())-1
+        PCY = int(self.pcaYValueInput.text())-1
         self.changePCViewX(PCX)
         self.changePCViewY(PCY)
-        print("done")
-
-
 
     def change_instance_down(self):
         current = self.muscleTableModel.trialIndex
@@ -493,8 +488,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             return
         xl, yl, xu, yu = event.rectCoords
         # Get spikes within box
-        xdata = self.spikeDataModel._pc[ti][mi][:,self.activePCX]
-        ydata = self.spikeDataModel._pc[ti][mi][:,self.activePCY]
+        xdata = self.spikeDataModel._pc[ti][mi][:,self.activePC[0]]
+        ydata = self.spikeDataModel._pc[ti][mi][:,self.activePC[1]]
         mask = (xdata > xl) & (xdata < xu) & (ydata > yl) & (ydata < yu)
         if not np.any(mask):
             return
