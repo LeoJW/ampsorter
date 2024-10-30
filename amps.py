@@ -6,10 +6,10 @@ import datetime
 import os
 import scipy.io
 import h5py
-from mainwindowui import Ui_MainWindow
+from mainwindow_ui import Ui_MainWindow
 from scipy.signal import butter, cheby1, cheby2, ellip, sosfreqz
 import numpy as np
-from PyQt6 import QtCore, QtWidgets, uic
+from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtGui import (
     QAction, 
     QKeySequence, 
