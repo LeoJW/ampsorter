@@ -1,11 +1,12 @@
-from PyQt6 import QtWidgets, QtCore, uic
+from PyQt6 import QtWidgets, QtCore
 from PyQt6.QtGui import QIntValidator, QDoubleValidator
 from PyQt6.QtWidgets import QLineEdit, QComboBox
+from settingsDialog_ui import Ui_Dialog
 
-class SettingsDialog(QtWidgets.QDialog):
+class SettingsDialog(QtWidgets.QDialog,Ui_Dialog):
     def __init__(self, parent):
         super().__init__(parent)
-        uic.loadUi("settingsDialog.ui", self)
+        self.setupUi(self)
         
         self.settings = QtCore.QSettings('AgileSystemsLab', 'amps')
         

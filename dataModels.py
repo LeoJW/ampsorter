@@ -4,7 +4,7 @@ from PyQt6 import QtCore
 from PyQt6.QtGui import QColor
 
 
-filtEnableColor = '#73A843'
+filtEnableColor = '#e392fa'
 
 class SpikeDataModel():
     def create(self, trials, muscles, paramDefault=0.4, waveformLength=32):
@@ -18,7 +18,7 @@ class SpikeDataModel():
         self._filters = [[np.empty((0,0)) for _ in muscles] for _ in trials]
     def updateSpikes(self, data, index):
         self._spikes[index[0]][index[1]] = data
-    def updatePCA(self, index):
+    def updatePCA(self, index, PCAaxis):
         # Note that PCA here is effectively done using correlation matrix 
         # (each variable divided by standard deviation), not covariance matrix
         if self._spikes[index[0]][index[1]].shape[0] <= 1:
@@ -33,7 +33,7 @@ class SpikeDataModel():
         eigvecs = eigvecs[:,idx]
         eigvals = eigvals[idx]
         scores = np.dot(x, eigvecs)
-        self._pc[index[0]][index[1]] = scores[:,0:2]
+        self._pc[index[0]][index[1]] = scores[:,PCAaxis]
 
 
 class TraceDataModel():
