@@ -4,7 +4,7 @@ from PyQt6 import QtCore
 from PyQt6.QtGui import QColor
 
 
-filtEnableColor = '#e392fa'
+filtEnableColor = '#73A843'
 
 class SpikeDataModel():
     def create(self, trials, muscles, paramDefault=0.4, waveformLength=32):
