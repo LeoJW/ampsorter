@@ -1,5 +1,5 @@
 # AMPS
-# Assited Motor Program Sorter (or Muscle Potential Sorter)
+# Assisted Motor Program Sorter (or Muscle Potential Sorter)
 import json
 import dill
 import datetime
@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import (
 import pyqtgraph as pg
 from settingsDialog import *
 from dataModels import *
-
+ 
 """ 
 Main TODO / bugs:
 - Changing waveform length after save can result in further saves not working 
@@ -39,7 +39,7 @@ Main TODO / bugs:
 - Dead time and other parameters implemented per muscle, rather than globally
 
 New Features to implement:
-- Keyboard shortcut for switching between trials
+- Save settings to a given file!!
 - Lasso selection on PCA
 - Line selection on waveform plot
 
@@ -237,7 +237,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Shift+Right" : self.panRight,
             "Shift+Up" : self.xZoomIn,
             "Shift+Down" : self.xZoomOut,
-            "Ctrl+Shift+M" : self.match_times_and_samples
+            "Ctrl+Shift+M" : self.match_times_and_samples,
+            "Ctrl+i" : self.switch_trial_up,
+            "Ctrl+k" : self.switch_trial_down
         }
         self.shortcuts = []
         for keycombo, keyfunc in self.shortcutDict.items():
@@ -254,6 +256,26 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 times = self.spikeDataModel._spikes[i][j][:,0] - t0
                 self.spikeDataModel._spikes[i][j][:,1] = (np.round(times, 4) * int(self.traceDataModel._fs)).astype(int)
     
+    def switch_trial_down(self):
+        ti = self.muscleTableModel.trialIndex
+        if(ti == len(self.trialListModel.trials) - 1):
+            self.trialSelectionChanged(0, ti)
+            index = self.trialListModel.createIndex(0, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+        else:
+            self.trialSelectionChanged(ti + 1, ti)
+            index = self.trialListModel.createIndex(ti+1, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+    def switch_trial_up(self):
+        ti = self.muscleTableModel.trialIndex
+        if(ti == 0):
+            self.trialSelectionChanged(len(self.trialListModel.trials) - 1, ti)
+            index = self.trialListModel.createIndex(len(self.trialListModel.trials) - 1, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+        else:
+            self.trialSelectionChanged(ti - 1, ti)
+            index = self.trialListModel.createIndex(ti - 1, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
     # Shift the trace view by default 5% of whatever the current range is
     def panLeft(self, frac=0.05):
         range = self.traceView.getPlotItem().viewRange()
@@ -278,6 +300,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if isinstance(self.sender(), QLineEdit):
             self.sender().clearFocus()
     
+    # Reassignment based functions
     def reassignMuscle(self):
         sourceMuscle = self.reassignSourceLineEdit.text()
         targetMuscle = self.reassignTargetLineEdit.text()
@@ -383,6 +406,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             for j in range(params.shape[1]):
                 self.spikeDataModel._params[i][j] = avgparam[j]
         
+    # Selection functions
     def spikeSelection(self, event):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
@@ -418,6 +442,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.updateWaveView()
         self.updateSpikeView()
     
+    # Plot update functions
     def updateSpikeView(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
@@ -819,7 +844,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             'waveformLength' : int(self.settings.value('waveformLength', '32')),
             'alignAt' : self.settings.value('alignAt', 'local maxima'),
             'deadTime' : int(self.settings.value('deadTime', '10')),
-            'fractionPreAlign' : float(self.settings.value('fractionPreAlign', '0.2'))
+            'fractionPreAlign' : float(self.settings.value('fractionPreAlign', '0.4'))
         }
     
     def initializeDataDir(self):
