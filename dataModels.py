@@ -33,7 +33,7 @@ class SpikeDataModel():
         eigvecs = eigvecs[:,idx]
         eigvals = eigvals[idx]
         scores = np.dot(x, eigvecs)
-        self._pc[index[0]][index[1]] = scores[:,0:2]
+        self._pc[index[0]][index[1]] = scores[:,:]
 
 
 class TraceDataModel():
