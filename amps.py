@@ -1,14 +1,15 @@
 # AMPS
-# Assited Motor Program Sorter (or Muscle Potential Sorter)
+# Assisted Motor Program Sorter (or Muscle Potential Sorter)
 import json
 import dill
 import datetime
 import os
 import scipy.io
 import h5py
+from mainwindow_ui import Ui_MainWindow
 from scipy.signal import butter, cheby1, cheby2, ellip, sosfreqz
 import numpy as np
-from PyQt6 import QtCore, QtWidgets, uic
+from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtGui import (
     QAction, 
     QKeySequence, 
@@ -27,9 +28,12 @@ from PyQt6.QtWidgets import (
 import pyqtgraph as pg
 from settingsDialog import *
 from dataModels import *
-
+ 
 """ 
 Main TODO / bugs:
+- Better PCA shortcuts (1-4)
+- Update PCA text when using shortcuts
+- Fix filter tab UI
 - Changing waveform length after save can result in further saves not working 
     `np.vstack(savelist)` on line 915 tries to concatenate vectors of different lengths
 - Trial naming is VERY brittle. If first trial is missing end trial numbers, can throw out problems
@@ -39,14 +43,11 @@ Main TODO / bugs:
 - Dead time and other parameters implemented per muscle, rather than globally
 
 New Features to implement:
-- Keyboard shortcut for switching between trials
+- Save settings to a given file!!
 - Lasso selection on PCA
 - Line selection on waveform plot
 
 """
-
-qt_creator_file = "mainwindow.ui"
-Ui_MainWindow, QtBaseClass = uic.loadUiType(qt_creator_file)
 
 # Could set up to instead get names from files themselves
 # But premature optimization = root of all evil
@@ -183,8 +184,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.stopbandAttenDBLineEdit.setValidator(QDoubleValidator(0, 100, 3, self))
         
         #--- PC Controls
-        self.pcaXValueInput.setValidator(QIntValidator(1,32,self))
-        self.pcaYValueInput.setValidator(QIntValidator(1,32,self))
+        self.pcaXValueInput.setValidator(QIntValidator(1, 32, self))
+        self.pcaYValueInput.setValidator(QIntValidator(1, 32, self))
         self.pcaXValueInput.editingFinished.connect(self.setPCManual)
         self.pcaYValueInput.editingFinished.connect(self.setPCManual)
 
@@ -245,10 +246,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Shift+Up" : self.xZoomIn,
             "Shift+Down" : self.xZoomOut,
             "Ctrl+Shift+M" : self.match_times_and_samples,
-            "Shift+L" : self.switch_trial_down,
-            "Shift+J" : self.switch_trial_up,
-            "W" : self.change_instance_down,
-            "S" : self.change_instance_up,
+            "Ctrl+Right" : self.switchTrialDown,
+            "Ctrl+Left" : self.switchTrialUp,
             "I" : lambda: self.changePCViewX(0),
             "O" : lambda: self.changePCViewX(1),
             "P" : lambda: self.changePCViewX(2),
@@ -256,14 +255,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "K" : lambda: self.changePCViewY(1),
             "L" : lambda: self.changePCViewY(2),
         }
-
-
         self.shortcuts = []
         for keycombo, keyfunc in self.shortcutDict.items():
             self.shortcuts.append(QShortcut(QKeySequence(keycombo), self))
             self.shortcuts[-1].activated.connect(keyfunc)
     
-    def switch_trial_down(self):
+    def switchTrialDown(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         if(ti == len(self.trialListModel.trials) - 1):
             self.trialSelectionChanged(0, ti)
@@ -273,7 +270,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.trialSelectionChanged(ti + 1, ti)
             index = self.trialListModel.createIndex(ti+1, 0)
             self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
-    def switch_trial_up(self):
+    def switchTrialUp(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         if(ti == 0):
             self.trialSelectionChanged(len(self.trialListModel.trials) - 1, ti)
@@ -288,49 +285,20 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def changePCViewX(self, view):
         self.activePC[0] = view
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
-        self.spikeDataModel.updatePCA((ti,mi), self.activePC)
+        self.spikeDataModel.updatePCA((ti,mi))
         self.updatePCView()
 
     def changePCViewY(self, view):
         self.activePC[1] = view
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
-        self.spikeDataModel.updatePCA((ti,mi), self.activePC)
+        self.spikeDataModel.updatePCA((ti,mi))
         self.updatePCView()
 
     def setPCManual(self):
-        PCX = int(self.pcaXValueInput.text())
-        PCY = int(self.pcaYValueInput.text())
+        PCX = int(self.pcaXValueInput.text())-1
+        PCY = int(self.pcaYValueInput.text())-1
         self.changePCViewX(PCX)
         self.changePCViewY(PCY)
-        print("done")
-
-
-
-    def change_instance_down(self):
-        current = self.muscleTableModel.trialIndex
-        updated = current - 1
-        length = len(self.trialListModel.trials)
-        index = self.trialListModel.createIndex(updated, 0)
-        maxIndex = self.trialListModel.createIndex(length,0)
-        if updated >= 0:
-            self.trialSelectionChanged(updated, current)
-            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
-        else:
-            self.trialSelectionChanged(maxIndex, current)
-            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
-
-    def change_instance_up(self):
-        current = self.muscleTableModel.trialIndex
-        updated = current + 1
-        lenght = len(self.trialListModel.trials)
-        index = self.trialListModel.createIndex(updated, 0)
-        zeroIndex = self.trialListModel.createIndex(0,0)
-        if current <= lenght:
-            self.trialSelectionChanged(updated,current)
-            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
-        else:
-            self.trialSelectionChanged(zeroIndex, current)
-            self.trialView.selectionModel().select(zeroIndex, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
 
     def match_times_and_samples(self):
         muscles = [m[0] for m in self.muscleTableModel._data[0]]
@@ -342,6 +310,26 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 times = self.spikeDataModel._spikes[i][j][:,0] - t0
                 self.spikeDataModel._spikes[i][j][:,1] = (np.round(times, 4) * int(self.traceDataModel._fs)).astype(int)
     
+    def switch_trial_down(self):
+        ti = self.muscleTableModel.trialIndex
+        if(ti == len(self.trialListModel.trials) - 1):
+            self.trialSelectionChanged(0, ti)
+            index = self.trialListModel.createIndex(0, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+        else:
+            self.trialSelectionChanged(ti + 1, ti)
+            index = self.trialListModel.createIndex(ti+1, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+    def switch_trial_up(self):
+        ti = self.muscleTableModel.trialIndex
+        if(ti == 0):
+            self.trialSelectionChanged(len(self.trialListModel.trials) - 1, ti)
+            index = self.trialListModel.createIndex(len(self.trialListModel.trials) - 1, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
+        else:
+            self.trialSelectionChanged(ti - 1, ti)
+            index = self.trialListModel.createIndex(ti - 1, 0)
+            self.trialView.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect)
     # Shift the trace view by default 5% of whatever the current range is
     def panLeft(self, frac=0.05):
         range = self.traceView.getPlotItem().viewRange()
@@ -366,6 +354,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if isinstance(self.sender(), QLineEdit):
             self.sender().clearFocus()
     
+    #------------------------ Reassignment functions ------------------------#
     def reassignMuscle(self):
         sourceMuscle = self.reassignSourceLineEdit.text()
         targetMuscle = self.reassignTargetLineEdit.text()
@@ -471,6 +460,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             for j in range(params.shape[1]):
                 self.spikeDataModel._params[i][j] = avgparam[j]
         
+    #------------------------ Selection functions ------------------------#
     def spikeSelection(self, event):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
@@ -493,8 +483,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             return
         xl, yl, xu, yu = event.rectCoords
         # Get spikes within box
-        xdata = self.spikeDataModel._pc[ti][mi][:,self.activePCX]
-        ydata = self.spikeDataModel._pc[ti][mi][:,self.activePCY]
+        xdata = self.spikeDataModel._pc[ti][mi][:,self.activePC[0]]
+        ydata = self.spikeDataModel._pc[ti][mi][:,self.activePC[1]]
         mask = (xdata > xl) & (xdata < xu) & (ydata > yl) & (ydata < yu)
         if not np.any(mask):
             return
@@ -506,6 +496,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.updateWaveView()
         self.updateSpikeView()
     
+    #------------------------ Plot update functions ------------------------#
     def updateSpikeView(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         if self.spikeDataModel._spikes[ti][mi].shape[0] <= 1:
@@ -581,26 +572,26 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
         # Re-run PCA if there are spikes but PCs are empty
         if self.spikeDataModel._pc[ti][mi].shape[0] <= 1 and self.spikeDataModel._spikes[ti][mi].shape[0] > 1:
-            self.spikeDataModel.updatePCA((ti,mi), self.activePC)
+            self.spikeDataModel.updatePCA((ti,mi))
         if self.spikeDataModel._pc[ti][mi].shape[0] <= 1:
             for pcu in self.pcUnits:
                 pcu.setData([],[])
             return
         unit = self.spikeDataModel._spikes[ti][mi][:,2]
         valid = self.spikeDataModel._spikes[ti][mi][:,3] == 1
-        # Plot PC scores from each valid unitF
+        # Plot PC scores from each valid unit
         for u in range(10):
             mask = np.logical_and(valid, unit==u)
             if not np.any(mask):
                 self.pcUnits[u].setData([],[])
                 continue
-            self.pcUnits[u].setData(self.spikeDataModel._pc[ti][mi][mask,0], self.spikeDataModel._pc[ti][mi][mask,1])
+            self.pcUnits[u].setData(self.spikeDataModel._pc[ti][mi][mask,self.activePC[0]], self.spikeDataModel._pc[ti][mi][mask,self.activePC[1]])
         # Plot invalid PC scores, if they exist
         mask = np.logical_not(valid)
         if not np.any(mask):
             self.pcUnits[-1].setData([],[])
             return
-        self.pcUnits[-1].setData(self.spikeDataModel._pc[ti][mi][mask,0], self.spikeDataModel._pc[ti][mi][mask,1])
+        self.pcUnits[-1].setData(self.spikeDataModel._pc[ti][mi][mask,self.activePC[0]], self.spikeDataModel._pc[ti][mi][mask,self.activePC[1]])
     
     def updateTraceView(self):
         selectedRowIndices = [item.row() for item in self.muscleView.selectionModel().selectedRows()]
@@ -681,18 +672,18 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.spikeDataModel._spikes[trialIndex][muscleIndex] = spikes
         self.muscleTableModel._data[trialIndex][muscleIndex][1] = len(inds)
         self.muscleTableModel.layoutChanged.emit()
-        self.spikeDataModel.updatePCA((trialIndex, muscleIndex), self.activePC)
+        self.spikeDataModel.updatePCA((trialIndex, muscleIndex))
         self.updatePCView()
         self.updateWaveView()
         self.updateSpikeView()
     
     def undetectSpikes(self):
         ti, mi = self.muscleTableModel.trialIndex, self._activeIndex
-        spikes = np.zeros((0, 4 + self.settingsCache['waveformLength']))
+        spikes = np.zeros((0, 5 + self.settingsCache['waveformLength']))
         self.spikeDataModel._spikes[ti][mi] = spikes
         self.muscleTableModel._data[ti][mi][1] = 0
         self.muscleTableModel.layoutChanged.emit()
-        self.spikeDataModel.updatePCA((ti,mi), self.activePC)
+        self.spikeDataModel.updatePCA((ti,mi))
         self.updatePCView()
         self.updateWaveView()
         self.updateSpikeView()
@@ -955,6 +946,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         #if so, reshape spikes - Need two cases
         #If waveformLength got larger, fll spikes with zeros or nans or something
         #If waveformLength got smaller, cut on either side of peak to satisfy fract
+            'fractionPreAlign' : float(self.settings.value('fractionPreAlign', '0.4'))
+        }
     
     def initializeDataDir(self):
         self.fileLabel.setText(os.path.basename(self._path_data))
@@ -1043,7 +1036,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         with open(os.path.join(self._path_amps, 'detection_params.json'), 'w') as f:
             data = {
                 'sorting date' : str(datetime.datetime.now()),
-                'amps version' : 'v0.3',
+                'amps version' : 'v0.4',
                 'sampling frequency' : self.traceDataModel._fs,
                 'aligned at' : self.settingsCache['alignAt'],
                 'reassigned muscles' : self.reassignedMuscles,
