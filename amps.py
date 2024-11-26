@@ -1003,7 +1003,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         for i, perTrialList in enumerate(self.spikeDataModel._spikes):
             trialNum = int(self.trialListModel.trials[i][0])
             for j, arr in enumerate(perTrialList):
-                print(arr.shape)
                 savelist.append(
                     np.concatenate((trialNum * np.ones((arr.shape[0],1)), j * np.ones((arr.shape[0],1)), arr), axis=1)
                 )
