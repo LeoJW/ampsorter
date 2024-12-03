@@ -903,6 +903,40 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             'deadTime' : int(self.settings.value('deadTime', '10')),
             'fractionPreAlign' : float(self.settings.value('fractionPreAlign', '0.4'))
         }
+        set_length = int(self.settings.value('waveformLength', '32'))
+        #check_length = self.spikeDataModel._spikes[]
+        #if waveformLength in cache is equivalent to what was set, do nothing
+        if not hasattr(self.spikeDataModel, '_spikes'):
+            return
+        cached_length = self.spikeDataModel._spikes[0][0].shape[1] - 5
+        if self.spikeDataModel._spikes[0][0].shape[1] == 5 + set_length:
+            return
+        #if waveformLength in cache was larger than what was set, reshape _spikes to make it smaller
+        if self.spikeDataModel._spikes[0][0].shape[1] > 5 + set_length:
+            change = cached_length - set_length
+            change_left = int(np.rint(change*self.settingsCache["fractionPreAlign"]))
+            change_right = int(change - change_left)
+            for trial_index, trial in enumerate(self.spikeDataModel._spikes):
+                for muscle_index, muscle in enumerate(trial):
+                    hold_array = muscle[:,0:5]
+                    modify_array = muscle[:,5:]
+                    modify_array = modify_array[:,change_left:-change_right]
+                    self.spikeDataModel._spikes[trial_index][muscle_index] = np.hstack((hold_array, modify_array))
+            return
+        #if waveformLength in cache was smaller than what was set, reshape _spikes to make it bigger
+        if self.spikeDataModel._spikes[0][0].shape[1] < 5 + set_length:
+            for trial_index, trial in enumerate(self.spikeDataModel._spikes):
+                for muscle_index, muscle in enumerate(trial):
+                    new_array = np.zeros((muscle.shape[0], 5 + set_length))
+                    new_array[:,0:5 + cached_length] = muscle
+                    self.spikeDataModel._spikes[trial_index][muscle_index] = new_array
+            return
+        
+        #if waveform length change update spike
+        #check if waveform length changed
+        #if so, reshape spikes - Need two cases
+        #If waveformLength got larger, fll spikes with zeros or nans or something
+        #If waveformLength got smaller, cut on either side of peak to satisfy fract
     
     def initializeDataDir(self):
         self.fileLabel.setText(os.path.basename(self._path_data))
