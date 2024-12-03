@@ -600,6 +600,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         unselectedRowIndices = [i for i in set(range(len(self.muscleNames))) if i not in selectedRowIndices]
         # Plot selected traces
         for i,ind in enumerate(selectedRowIndices):
+            print("muscle named index:", self.muscleNames[ind], i)
             self.traces[ind].setData(self.traceDataModel.get('time'), self.traceDataModel.get(self.muscleNames[ind]) + i)
         # Clear unselected traces
         for ind in unselectedRowIndices:
@@ -923,9 +924,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                     if 'empty' not in f]
             #grab muscle names from each file 
             #in the future we could change so that each file has different muscle names 
-
+            muscleNames = []
             for i in dir_contents:
-                MuscleNames = []
                 strippedChannels = []
                 if '.h5' in i:
                     nameFile = h5py.File(self._path_data + '/' + i, 'r')
@@ -935,7 +935,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                     nameFile.close()
                     for i in range(len(strippedChannels)):
                         if strippedChannels[i][1] in "QWERTYUIOPASDFGHJKLZXCVBNM":
-                            MuscleNames.append(strippedChannels[i])
+                            muscleNames.append(strippedChannels[i])
                 elif '.mat' in i:
                     x = scipy.io.loadmat(self._path_data + '/' + i)
                     for i in range(len(x['channelNames'][0])):
@@ -943,9 +943,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                         if muscleName[0] in "QWERTYUIOPASDFGHJKLZXCVBNM":
                             muscleNames.append(muscleName)
                 break
-            self.muscleNames = MuscleNames
+            
+            self.muscleNames = muscleNames
             self.muscleNamesWithTime = ['time', *self.muscleNames]
-                
+            print("muscles with time:", self.muscleNamesWithTime)    
+
             trial_nums = [f.split('.')[0][-3:] for f in trial_names]
             trials = sorted(zip(trial_nums, trial_names))
             # Generate fresh (muscle, nspike) array

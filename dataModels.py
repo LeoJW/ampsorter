@@ -76,7 +76,7 @@ class TraceDataModel():
         self._replaceMuscles = {}
     def get(self, name):
         # Always return processed form, even if no processing
-        print(self._filtdata)
+        print("filtdata:", self._filtdata)
         return self._filtdata[name]
     def normalize(self, name=None):
         # Do all if no specific specified (except time!)
