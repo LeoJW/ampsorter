@@ -898,47 +898,35 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             'waveformLength' : int(self.settings.value('waveformLength', '32')),
             'alignAt' : self.settings.value('alignAt', 'local maxima'),
             'deadTime' : int(self.settings.value('deadTime', '10')),
-            'fractionPreAlign' : float(self.settings.value('fractionPreAlign', '0.2'))
+            'fractionPreAlign' : float(self.settings.value('fractionPreAlign', '0.4'))
         }
         set_length = int(self.settings.value('waveformLength', '32'))
-        print("set_length: " + str(set_length))
         #check_length = self.spikeDataModel._spikes[]
         #if waveformLength in cache is equivalent to what was set, do nothing
         if not hasattr(self.spikeDataModel, '_spikes'):
-            print("spikeDataModel._spikes doesn't exist")
             return
-        print("spikeDataModel._spikes exists")
         cached_length = self.spikeDataModel._spikes[0][0].shape[1] - 5
-        print(self.spikeDataModel._spikes[0][0].shape[1])
         if self.spikeDataModel._spikes[0][0].shape[1] == 5 + set_length:
-            print("same size, nothing happened")
             return
         #if waveformLength in cache was larger than what was set, reshape _spikes to make it smaller
         if self.spikeDataModel._spikes[0][0].shape[1] > 5 + set_length:
-            print("smaller set_length, shrink")
             change = cached_length - set_length
             change_left = int(np.rint(change*self.settingsCache["fractionPreAlign"]))
             change_right = int(change - change_left)
-            print(change_left)
-            print(change_right)
             for trial_index, trial in enumerate(self.spikeDataModel._spikes):
                 for muscle_index, muscle in enumerate(trial):
                     hold_array = muscle[:,0:5]
                     modify_array = muscle[:,5:]
                     modify_array = modify_array[:,change_left:-change_right]
                     self.spikeDataModel._spikes[trial_index][muscle_index] = np.hstack((hold_array, modify_array))
-            print(self.spikeDataModel._spikes[0][0])
             return
         #if waveformLength in cache was smaller than what was set, reshape _spikes to make it bigger
         if self.spikeDataModel._spikes[0][0].shape[1] < 5 + set_length:
-            print("bigger set_length, grow")
             for trial_index, trial in enumerate(self.spikeDataModel._spikes):
                 for muscle_index, muscle in enumerate(trial):
-                    change = set_length - cached_length
-                    new_array = np.zeros((0, 5 + set_length))
+                    new_array = np.zeros((muscle.shape[0], 5 + set_length))
                     new_array[:,0:5 + cached_length] = muscle
                     self.spikeDataModel._spikes[trial_index][muscle_index] = new_array
-                    print(self.spikeDataModel._spikes[trial_index][muscle_index])
             return
         
         #if waveform length change update spike
@@ -946,8 +934,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         #if so, reshape spikes - Need two cases
         #If waveformLength got larger, fll spikes with zeros or nans or something
         #If waveformLength got smaller, cut on either side of peak to satisfy fract
-            'fractionPreAlign' : float(self.settings.value('fractionPreAlign', '0.4'))
-        }
     
     def initializeDataDir(self):
         self.fileLabel.setText(os.path.basename(self._path_data))
