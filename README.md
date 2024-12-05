@@ -1,4 +1,4 @@
-# ampsorter
+# Ampsorter
 Motor program spike sorting GUI/application built on PyQt6
 # AMPS Spike Sorting App
 
