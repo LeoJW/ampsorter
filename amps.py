@@ -52,7 +52,6 @@ New Features to implement:
 # Could set up to instead get names from files themselves
 # But premature optimization = root of all evil
 muscleNames = ['lax','lba','lsa','ldvm','ldlm','rdlm','rdvm','rsa','rba','rax']
-muscleNamesWithTime = ['time', *muscleNames]
 filtEnableColor = '#73A843'
 highlightColor = '#EEEEEE'
 muscleColors = {
@@ -90,7 +89,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.reassignedMuscles = {}
         self.activePC = np.array([0,1])
         self.muscleNames = muscleNames
-        self.muscleNamesWithTime = muscleNamesWithTime
         
         # Traces plot
         self._activeIndex = 0
@@ -600,7 +598,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         unselectedRowIndices = [i for i in set(range(len(self.muscleNames))) if i not in selectedRowIndices]
         # Plot selected traces
         for i,ind in enumerate(selectedRowIndices):
-            print("muscle named index:", self.muscleNames[ind], i)
+            print("muscle named index:", self.muscleNames[ind], i, ind)
             self.traces[ind].setData(self.traceDataModel.get('time'), self.traceDataModel.get(self.muscleNames[ind]) + i)
         # Clear unselected traces
         for ind in unselectedRowIndices:
@@ -829,9 +827,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if '.h5' in fname:
             file = h5py.File(fname, 'r')
             channelNames = [n[0].lower().decode('utf-8') for n in file['names']]
-            desiredChannelsPresent = [n for n in self.muscleNamesWithTime if n in channelNames]
+            desiredChannelsPresent = [n for n in ['time', *self.muscleNames] if n in channelNames]
+            print(channelNames,self.muscleNames,desiredChannelsPresent)
             inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
-            datamat = file['data'][inds,:].T
+            datamat = file['data'][inds,:]
             # Normalize time
             datamat[:,0] -= datamat[-1,0]
         elif '.mat' in fname:
@@ -840,7 +839,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             # 2023 DAQ program
             if 'data' in matkeys and 'channelNames' in matkeys:
                 channelNames = [s[0].lower() for s in file['channelNames'][0]]
-                desiredChannelsPresent = [n for n in self.muscleNamesWithTime if n in channelNames]
+                desiredChannelsPresent = [n for n in ['time', *self.muscleNames] if n in channelNames]
                 inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
                 datamat = file['data'][:,inds]
                 # Normalize time
@@ -848,7 +847,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             # Pre-2022 DAQ program
             elif trial_name[0:-4] in matkeys:
                 channelNames = [n[0].lower() for n in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
-                desiredChannelsPresent = [n for n in self.muscleNamesWithTime if n in channelNames]
+                desiredChannelsPresent = [n for n in ['time', *self.muscleNames] if n in channelNames]
                 inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
                 datamat = file[trial_name[0:-4]][:,inds]
         else:
@@ -979,9 +978,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 break
             
             self.muscleNames = muscleNames
-            self.muscleNamesWithTime = ['time', *self.muscleNames]
-            print("muscles with time:", self.muscleNamesWithTime)    
 
+            for i in range(len(self.muscleNames)):
+                self.muscleNames[i] = self.muscleNames[i].lower() ## this should only be a temporary fix 
+ 
             trial_nums = [f.split('.')[0][-3:] for f in trial_names]
             trials = sorted(zip(trial_nums, trial_names))
             # Generate fresh (muscle, nspike) array
@@ -1013,7 +1013,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 self.spikeDataModel._params = data['detectFuncParams']
                 self.spikeDataModel._filters = [[np.array(arr) for arr in sublist] for sublist in data['filters']]
                 self.muscleNames = data['muscleNames']
-                self.muscleNamesWithTime = data['muscleNamesWithTime']
                 self.reassignedMuscles = data['reassigned muscles']
                 self.reassignFromDict(self.reassignedMuscles)
                 loaded_version = data['amps version']
@@ -1059,8 +1058,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 'reassigned muscles' : self.reassignedMuscles,
                 'detectFuncParams' : self.spikeDataModel._params,
                 'filters' : [[arr.tolist() for arr in sublist] for sublist in self.spikeDataModel._filters],
-                'muscleNames' : self.muscleNames,
-                'muscleNamesWithTime' : self.muscleNamesWithTime
+                'muscleNames' : self.muscleNames
             }
             json.dump(data, f, indent=4, separators=(',',':'))
         with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'wb') as f:
