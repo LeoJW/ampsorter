@@ -52,7 +52,6 @@ New Features to implement:
 # Could set up to instead get names from files themselves
 # But premature optimization = root of all evil
 muscleNames = ['lax','lba','lsa','ldvm','ldlm','rdlm','rdvm','rsa','rba','rax']
-muscleNamesWithTime = ['time', *muscleNames]
 filtEnableColor = '#73A843'
 highlightColor = '#EEEEEE'
 muscleColors = {
@@ -89,12 +88,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self._path_amps = os.path.dirname(os.path.abspath(__file__))
         self.reassignedMuscles = {}
         self.activePC = np.array([0,1])
+        self.muscleNames = muscleNames
         
         # Traces plot
         self._activeIndex = 0
         self.traces = []
-        for i,m in enumerate(muscleNames):
-            pen = pg.mkPen(color=muscleColors[m])
+        for i,m in enumerate(self.muscleNames):
+            pen = pg.mkPen(color="#94D63C")
             self.traces.append(self.traceView.plot([],[], pen=pen, name=m))
             self.traces[i].curve.metaData = m
             self.traces[i].setDownsampling(ds=1, auto=True, method='subsample')
@@ -338,14 +338,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def reassignMuscle(self):
         sourceMuscle = self.reassignSourceLineEdit.text()
         targetMuscle = self.reassignTargetLineEdit.text()
-        if (sourceMuscle not in muscleNames) or (targetMuscle not in muscleNames):
+        if (sourceMuscle not in self.muscleNames) or (targetMuscle not in self.muscleNames):
             return
         self.traceDataModel.setReplace(sourceMuscle, targetMuscle)
         self.reassignedMuscles[sourceMuscle] = targetMuscle
         self.updateTraceView()
     
     def reassignFromDict(self, reassignDict):
-        if (not set(list(reassignDict.keys())).issubset(muscleNames)) or (not set(list(reassignDict.values())).issubset(muscleNames)):
+        if (not set(list(reassignDict.keys())).issubset(self.muscleNames)) or (not set(list(reassignDict.values())).issubset(self.muscleNames)):
             return
         for sourceMuscle in reassignDict.keys():
             self.traceDataModel.setReplace(sourceMuscle, reassignDict[sourceMuscle])
@@ -575,16 +575,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def updateTraceView(self):
         selectedRowIndices = [item.row() for item in self.muscleView.selectionModel().selectedRows()]
-        unselectedRowIndices = [i for i in set(range(len(muscleNames))) if i not in selectedRowIndices]
+        unselectedRowIndices = [i for i in set(range(len(self.muscleNames))) if i not in selectedRowIndices]
         # Plot selected traces
         for i,ind in enumerate(selectedRowIndices):
-            self.traces[ind].setData(self.traceDataModel.get('time'), self.traceDataModel.get(muscleNames[ind]) + i)
+            print("muscle named index:", self.muscleNames[ind], i, ind)
+            self.traces[ind].setData(self.traceDataModel.get('time'), self.traceDataModel.get(self.muscleNames[ind]) + i)
         # Clear unselected traces
         for ind in unselectedRowIndices:
             self.traces[ind].setData([],[])
         # Update Y axis
         yax = self.traceView.getAxis('left')
-        yax.setTicks([[(i, muscleNames[j]) for i,j in enumerate(selectedRowIndices)],[]])
+        yax.setTicks([[(i, self.muscleNames[j]) for i,j in enumerate(selectedRowIndices)],[]])
         # Set active index as one of the selected traces
         if self._activeIndex not in selectedRowIndices and len(selectedRowIndices) > 0:
             self.setActiveTrace(selectedRowIndices[0])
@@ -744,7 +745,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     # TODO: Could set to only move through currently displayed traces?
     def nextTrace(self):
-        newindex = self._activeIndex + 1 if self._activeIndex < len(muscleNames) else self._activeIndex
+        newindex = self._activeIndex + 1 if self._activeIndex < len(self.muscleNames) else self._activeIndex
         self.setActiveTrace(newindex)
     
     def prevTrace(self):
@@ -753,12 +754,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     
     def traceClicked(self, event):
         selectedMuscle = event.curve.metaData
-        self.setActiveTrace(muscleNames.index(selectedMuscle))
+        self.setActiveTrace(self.muscleNames.index(selectedMuscle))
     
     def setActiveTrace(self, index):
         prev = self._activeIndex
         # Change prev color back
-        self.traces[prev].setPen(pg.mkPen(color=muscleColors[muscleNames[prev]]))
+        self.traces[prev].setPen(pg.mkPen(color="#94D63C"))
         # Set new selection to highlight color
         self.traces[index].setPen(pg.mkPen(color=highlightColor))
         # Move threshold line/function to selected
@@ -806,9 +807,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if '.h5' in fname:
             file = h5py.File(fname, 'r')
             channelNames = [n[0].lower().decode('utf-8') for n in file['names']]
-            desiredChannelsPresent = [n for n in muscleNamesWithTime if n in channelNames]
+            desiredChannelsPresent = [n for n in ['time', *self.muscleNames] if n in channelNames]
+            print(channelNames,self.muscleNames,desiredChannelsPresent)
             inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
-            datamat = file['data'][inds,:].T
+            datamat = file['data'][inds,:]
             # Normalize time
             datamat[:,0] -= datamat[-1,0]
         elif '.mat' in fname:
@@ -817,7 +819,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             # 2023 DAQ program
             if 'data' in matkeys and 'channelNames' in matkeys:
                 channelNames = [s[0].lower() for s in file['channelNames'][0]]
-                desiredChannelsPresent = [n for n in muscleNamesWithTime if n in channelNames]
+                desiredChannelsPresent = [n for n in ['time', *self.muscleNames] if n in channelNames]
                 inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
                 datamat = file['data'][:,inds]
                 # Normalize time
@@ -825,7 +827,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             # Pre-2022 DAQ program
             elif trial_name[0:-4] in matkeys:
                 channelNames = [n[0].lower() for n in file[trial_name[0:-4]+'_Header'][0][0][0][0]]
-                desiredChannelsPresent = [n for n in muscleNamesWithTime if n in channelNames]
+                desiredChannelsPresent = [n for n in ['time', *self.muscleNames] if n in channelNames]
                 inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
                 datamat = file[trial_name[0:-4]][:,inds]
         else:
@@ -843,7 +845,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             return
         ti = index
         for ch in names[filtered]:
-            mi = muscleNames.index(ch)
+            mi = self.muscleNames.index(ch)
             thisfilt = self.spikeDataModel._filters[ti][mi]
             sos = self._filtsos if len(thisfilt) == 0 else thisfilt
             self.filterTrace(ti=ti, mi=mi, sos=sos, changeFlag=False, plotUpdate=False)
@@ -880,11 +882,47 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             'deadTime' : int(self.settings.value('deadTime', '10')),
             'fractionPreAlign' : float(self.settings.value('fractionPreAlign', '0.4'))
         }
+        set_length = int(self.settings.value('waveformLength', '32'))
+        #check_length = self.spikeDataModel._spikes[]
+        #if waveformLength in cache is equivalent to what was set, do nothing
+        if not hasattr(self.spikeDataModel, '_spikes'):
+            return
+        cached_length = self.spikeDataModel._spikes[0][0].shape[1] - 5
+        if self.spikeDataModel._spikes[0][0].shape[1] == 5 + set_length:
+            return
+        #if waveformLength in cache was larger than what was set, reshape _spikes to make it smaller
+        if self.spikeDataModel._spikes[0][0].shape[1] > 5 + set_length:
+            change = cached_length - set_length
+            change_left = int(np.rint(change*self.settingsCache["fractionPreAlign"]))
+            change_right = int(change - change_left)
+            for trial_index, trial in enumerate(self.spikeDataModel._spikes):
+                for muscle_index, muscle in enumerate(trial):
+                    hold_array = muscle[:,0:5]
+                    modify_array = muscle[:,5:]
+                    modify_array = modify_array[:,change_left:-change_right]
+                    self.spikeDataModel._spikes[trial_index][muscle_index] = np.hstack((hold_array, modify_array))
+            return
+        #if waveformLength in cache was smaller than what was set, reshape _spikes to make it bigger
+        if self.spikeDataModel._spikes[0][0].shape[1] < 5 + set_length:
+            for trial_index, trial in enumerate(self.spikeDataModel._spikes):
+                for muscle_index, muscle in enumerate(trial):
+                    new_array = np.zeros((muscle.shape[0], 5 + set_length))
+                    new_array[:,0:5 + cached_length] = muscle
+                    self.spikeDataModel._spikes[trial_index][muscle_index] = new_array
+            return
+        
+        #if waveform length change update spike
+        #check if waveform length changed
+        #if so, reshape spikes - Need two cases
+        #If waveformLength got larger, fll spikes with zeros or nans or something
+        #If waveformLength got smaller, cut on either side of peak to satisfy fract
     
     def initializeDataDir(self):
         self.fileLabel.setText(os.path.basename(self._path_data))
         dir_contents = os.listdir(self._path_data)
         self._path_amps = os.path.join(self._path_data, 'amps')
+
+
         # If no dir for amps in data dir
         # Make one, read contents of data, populate app
         if 'amps' not in dir_contents:
@@ -897,12 +935,39 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                     if 'Control' not in f
                     if 'quiet' not in f
                     if 'empty' not in f]
+            #grab muscle names from each file 
+            #in the future we could change so that each file has different muscle names 
+            muscleNames = []
+            for i in dir_contents:
+                strippedChannels = []
+                if '.h5' in i:
+                    nameFile = h5py.File(self._path_data + '/' + i, 'r')
+                    for x in nameFile['names']:
+                        x = str(x).strip("[b'").strip("']")
+                        strippedChannels.append(x)
+                    nameFile.close()
+                    for i in range(len(strippedChannels)):
+                        if strippedChannels[i][1] in "QWERTYUIOPASDFGHJKLZXCVBNM":
+                            muscleNames.append(strippedChannels[i])
+                elif '.mat' in i:
+                    x = scipy.io.loadmat(self._path_data + '/' + i)
+                    for i in range(len(x['channelNames'][0])):
+                        muscleName = str(x['channelNames'][0][i]).strip("['").strip("']")
+                        if muscleName[0] in "QWERTYUIOPASDFGHJKLZXCVBNM":
+                            muscleNames.append(muscleName)
+                break
+            
+            self.muscleNames = muscleNames
+
+            for i in range(len(self.muscleNames)):
+                self.muscleNames[i] = self.muscleNames[i].lower() ## this should only be a temporary fix 
+ 
             trial_nums = [f.split('.')[0][-3:] for f in trial_names]
             trials = sorted(zip(trial_nums, trial_names))
             # Generate fresh (muscle, nspike) array
             self.trialListModel.trials = trials
-            self.muscleTableModel._data = [[[m, 0, False, '_-_'] for m in muscleNames] for i in range(len(trials))]
-            self.spikeDataModel.create(trials, muscleNames, waveformLength=self.settingsCache['waveformLength'])
+            self.muscleTableModel._data = [[[m, 0, False, '_-_'] for m in self.muscleNames] for i in range(len(trials))]
+            self.spikeDataModel.create(trials, self.muscleNames, waveformLength=self.settingsCache['waveformLength'])
             self.save()
             self.trialListModel.layoutChanged.emit()
             self.muscleTableModel.layoutChanged.emit()
@@ -927,15 +992,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 data = json.load(f)
                 self.spikeDataModel._params = data['detectFuncParams']
                 self.spikeDataModel._filters = [[np.array(arr) for arr in sublist] for sublist in data['filters']]
+                self.muscleNames = data['muscleNames']
                 self.reassignedMuscles = data['reassigned muscles']
                 self.reassignFromDict(self.reassignedMuscles)
                 loaded_version = data['amps version']
             with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'rb') as f:
                 self.spikeDataModel._funcs = dill.load(f)
-            data = np.genfromtxt(
-                os.path.join(self._path_amps, 'spikes.txt'),
-                delimiter=','
-            )
+            data = np.genfromtxt(os.path.join(self._path_amps, 'spikes.txt'),delimiter=','
+)
             # Note: Muscles are numbered in numpy array according to their index/order in muscleTable
             # Assumes every trial for this folder follows same scheme as first trial
             if len(data) == 0:
@@ -973,7 +1037,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 'aligned at' : self.settingsCache['alignAt'],
                 'reassigned muscles' : self.reassignedMuscles,
                 'detectFuncParams' : self.spikeDataModel._params,
-                'filters' : [[arr.tolist() for arr in sublist] for sublist in self.spikeDataModel._filters]
+                'filters' : [[arr.tolist() for arr in sublist] for sublist in self.spikeDataModel._filters],
+                'muscleNames' : self.muscleNames
             }
             json.dump(data, f, indent=4, separators=(',',':'))
         with open(os.path.join(self._path_amps, 'detection_functions.pkl'), 'wb') as f:
