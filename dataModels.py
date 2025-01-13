@@ -61,11 +61,12 @@ class TraceDataModel():
         if 'time' not in self._names:
             self._maindata['time'] = np.arange(matrix.shape[1])
             self._filtdata['time'] = np.arange(matrix.shape[1])
-        # Save sample rate. Use 1 if there's basically no data
+        # Grab sample rate. Takes most common diff of first 10 time samples. Use 1 if there's basically no data
+        self._fs = 1.0
         if len(self._maindata['time']) >= 10:
-            self._fs = 1 / np.mean(np.diff(self._maindata['time'][0:10]))
-        else:
-            self._fs = 1.0
+            diffs = np.diff(self._maindata['time'][0:10])
+            unique, counts = np.unique(diffs, return_counts=True)
+            self._fs = 1 / unique[np.argmax(counts)]
     def setReplace(self, source, target):
         if source not in self._names or target not in self._names:
             return
