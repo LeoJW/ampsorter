@@ -1,21 +1,22 @@
-# Ampsorter
-Motor program spike sorting GUI/application built on PyQt6
-# AMPS Spike Sorting App
+# AMPS (Assisted Motor Program Sorting)
+Insect EMG and motor program spike sorting GUI/application built on PyQt6
+
+NOTE: This is home-cooked, just-like-your-mom-used-to-make software. I made it for my own purposes, and while I'm happy to support more users, there are some lingering bugs, and it isn't packaged through pip or conda. Installation requires either downloading and running the code locally, or downloading an `.exe` file provided. I promise there's probably not a virus in there!
 
 ## Installation
 
-### Windows
-1. Navigate to the `dist` folder in the GitHub repository.
-2. Download `amps.exe`.
+### Run Locally: MacOS, Linux, Windows
+1. Open the terminal/shell and navigate to the directory where you want to house the AMPS code files. On Windows you can use git bash for this
+2. Run: `git clone https://github.com/LeoJW/ampsorter.git`
+4. Create a virtual environment (venv) in the `ampsorter` directory (this can be done in terminal as shown [here](https://docs.python.org/3/library/venv.html) or in an editor like VS Code as shown [here](https://code.visualstudio.com/docs/python/environments)) and select the most up-to-date version of Python.
+5. Install the required dependencies: `pip install numpy scipy h5py dill PyQt6 pyqtgraph`
 
-### Linux and macOS
-1. Open the terminal and navigate to the directory where you want to house the AMPS code files.
-2. Run: git clone https://github.com/LeoJW/ampsorter.git
-3. Open the cloned repository in Visual Studio Code.
-4. Create a virtual environment (venv) and select the most up-to-date version of Python.
-5. Install the required dependencies: pip install numpy scipy h5py dill PyQt6 pyqtgraph
 
-Alternatively, you can use a translator such as Wine to run the `.exe` file on your system.
+### Run Executable: Primarily Windows 
+1. Navigate to the dist folder in this Github repository
+2. Download `amps.exe`
+
+For macOS/Linux, you can potentially use a translator such as Wine to run the `.exe` file on your system. We can compile standalone executables for Linux and MacOS, or whatever machine you'd like if we can find a similar machine and run the compilation. 
 
 ---
 
@@ -41,29 +42,32 @@ Alternatively, you can use a translator such as Wine to run the `.exe` file on y
 - **Keyboard Shortcut**: `Ctrl + L`.
 
 **Preferred File Formats**:
-- **`.mat`**: 
-- Contains a struct with two fields:
+This program expects one of two specific file formats. In both formats, **only channel names which start with a capital letter are read and displayed**. The convention is that muscle channels are named starting with a capital letter, everything else with lowercase letter. 
+
+**`.h5`**: 
+- Contains two datasets:
+- `['data']`: Rows are the channel names; columns are muscle data.
+- `['names']`: A collection of channel names. Only names starting with a capital letter are treated as muscles.
+
+**`.mat`**: 
+ - Contains a struct with two fields:
  - `struct.data`: An array where rows represent sample data and columns represent channel names.
  - `struct.channelNames`: A list of channel names (capitalized muscle names, all other fields lowercase).
-- **`.h5`**: 
-- Contains two datasets:
- - `['data']`: Rows are the channel names (capitalized); columns are muscle data.
- - `['names']`: A collection of channel names (capitalized).
 
 **Other Accepted File Formats**:
-- `.mat`: Pre-2022 formats.
+- `.mat`: Pre-2022 formats. Consider this undocumented back-compatibilty for an old Sponberg lab format
 
 ---
 
 ### Select Trial and Muscles
 1. On the left, all trials and muscles in the file are listed.
 2. Select a trial and muscle(s) to analyze by clicking and dragging to highlight them.
-- To select specific muscles, hold `Ctrl` and click on the desired muscles.
+- To select specific muscles, hold `Ctrl` (`Cmd` on MacOS) and click on the desired muscles.
 
 Graphs of the selected muscles' traces will appear in the bottom half of the screen.  
 - Click on a trace to make it the active trace.  
 - **Active Trace**: Colored white instead of the default color.
-- **Keyboard Shortcuts**: Use `Ctrl + Up Arrow` and `Ctrl + Down Arrow` to switch between active traces.
+- **Keyboard Shortcuts**: Use `Ctrl + Up Arrow` and `Ctrl + Down Arrow` to switch between active traces. Note that all shortcuts with `Ctrl` will use `Cmd` instead on MacOS
 
 ---
 
@@ -87,29 +91,38 @@ Graphs of the selected muscles' traces will appear in the bottom half of the scr
 ---
 
 ### Principal Component Analysis (PCA)
-1. Navigate to the "PC" tab.
-2. Enter the desired PC values for the x-axis and y-axis (range: 1–12).
+Useful for picking out clusters, invalidating or sorting groups of spikes with certain properties
+- Each point displayed is a spike from the currently selected channel in the currently selected trial
+- X and Y axes by default display the projection (scores) of each spike on PCs 1 and 2
+- Which PC is displayed on each axis can be changed through the PCA tab or via keyboard shortcut
+- Clicking and dragging over a selection of spikes will "invalidate" those spikes in all screens
+- Clicking and dragging, but pressing any number 0-9 before releasing, will instead assign those spikes to a "unit", and color them on all screens accordingly
 
 ---
 
 ### Spike Selection
-1. To focus on specific spikes:
-- Click and drag over the desired spikes in the PCA viewer while holding a number key to change their color.
-- The new color will update across all spike representations.
+Spikes can be selected in both PCA and bottom spike views
+- Click and drag over the desired spikes in either viewer. Releasing will toggle selected spikes between "valid" (normal) and "invalid" (greyed out) tags
+- Click and drag, but pressing any number key 0-9 before release, will instead assign selected spikes to a "unit", and color on all screens accordingly
 
 ---
 
 ### Other Settings
-1. Go to the "Preferences" tab in the top left corner.
-2. A new box will open, allowing you to modify settings like:
-- Waveform length.
-- Alignment settings.
-- Dead time between samples.
-- Fractional pre-alignment.
+1. Go to the "Preferences" tab in the top left corner (`Ctrl + ,`, `Cmd + ,` on Mac)
+2. A new box will open, allowing you to modify the following:
+
+| Setting            |                    |
+|------------------  |--------------------|
+| Waveform length    | How long, in samples, of a snippet is extracted for each spike |
+| Align at           | Whether to choose spike time as time at peak, or time at which threshold was crossed |
+| Dead time          | How many samples after a spike is detected before another can be detected |
+| Fraction pre-align | Fraction of spike waveform pre-alignment point (peak or threshold crossing) |
 
 ---
 
 ### Keyboard Shortcuts
+
+On MacOS all `Ctrl` shortcuts are instead `Cmd`
 
 | Shortcut                  | Action                                      |
 |---------------------------|---------------------------------------------|
@@ -145,10 +158,9 @@ Graphs of the selected muscles' traces will appear in the bottom half of the scr
 
 ---
 
-## Authors
-- Leo Wood
-- Joshua Davenport
-- Max Chen
+Written by Leo Wood
+
+Additional support from Joshua Davenport, Max Chen
 
 ---
 
