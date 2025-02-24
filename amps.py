@@ -34,9 +34,8 @@ from dataModels import *
 Main TODO / bugs:
 - Better PCA shortcuts (1-4)
 - Update PCA text when using shortcuts
+- Ressignments don't hold after save/load
 - Fix filter tab UI
-- Changing waveform length after save can result in further saves not working 
-    `np.vstack(savelist)` on line 915 tries to concatenate vectors of different lengths
 - Trial naming is VERY brittle. If first trial is missing end trial numbers, can throw out problems
 - Save settings like alignAt to be specific to each individual, saved and loaded accordingly
 - json files save if program is opened and then closed immediately. Catch this and prevent
@@ -236,7 +235,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             "Shift+Right" : self.panRight,
             "Shift+Up" : self.xZoomIn,
             "Shift+Down" : self.xZoomOut,
-            "Ctrl+Shift+M" : self.match_times_and_samples,
+            # "Ctrl+Shift+M" : self.match_times_and_samples, # Secret hidden functionality. Enable at your own risk!
+            # "Ctrl+Shift+C" : self.correct_spike_times,
             "Ctrl+Right" : self.switchTrialDown,
             "Ctrl+Left" : self.switchTrialUp,
             "I" : lambda: self.changePCViewX(0),
@@ -291,6 +291,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.changePCViewX(PCX)
         self.changePCViewY(PCY)
 
+
+    # Function made to create accurate spike indices retroactively on sorting files created before I was tracking indices
     def match_times_and_samples(self):
         muscles = [m[0] for m in self.muscleTableModel._data[0]]
         trials = [t[0] for t in self.trialListModel.trials]
@@ -300,6 +302,25 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 t0 = self.traceDataModel.get('time')[0]
                 times = self.spikeDataModel._spikes[i][j][:,0] - t0
                 self.spikeDataModel._spikes[i][j][:,1] = (np.round(times, 4) * int(self.traceDataModel._fs)).astype(int)
+    # Function to fix spike times to be accurate based on spike indices after timing shift bug fix
+    def correct_spike_times(self):
+        muscles = [m[0] for m in self.muscleTableModel._data[0]]
+        trials = [t[0] for t in self.trialListModel.trials]
+        for i,trial in enumerate(trials):
+            self.trialSelectionChanged(i, None)
+            # Retrieve selected trial's data to get time shifts needed
+            trial_name = self.trialListModel.trials[i][1]
+            fname = os.path.join(self._path_data, trial_name)
+            
+            file = h5py.File(fname, 'r')
+            channelNames = [n[0].lower().decode('utf-8') for n in file['names']]
+            desiredChannelsPresent = [n for n in ['time', *self.muscleNames] if n in channelNames]
+            inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
+            datamat = file['data'][inds,:]
+            for j,muscle in enumerate(muscles):
+                if (len(self.spikeDataModel._spikes[i][j]) == 0) or (np.all(self.spikeDataModel._spikes[i][j][:,0] <= 0)):
+                    continue
+                self.spikeDataModel._spikes[i][j][:,0] = self.spikeDataModel._spikes[i][j][:,0] - datamat[0,-1]
 
     # Shift the trace view by default 5% of whatever the current range is
     def panLeft(self, frac=0.05):
@@ -377,7 +398,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             2 * statusBarDisplayTime)
         window = float(self.crosstalkWindowLineEdit.text()) / 1000
         # Find spikes in selected muscle that occur within window of target muscle's spikes
-        targetSpikes = self.spikeDataModel._spikes[ti][targetIndex][:,0]
+        valid = self.spikeDataModel._spikes[ti][targetIndex][:,3] == 1
+        targetSpikes = self.spikeDataModel._spikes[ti][targetIndex][valid,0]
         selectSpikes = self.spikeDataModel._spikes[ti][mi][:,0]
         lowerBound = targetSpikes[:, np.newaxis] - window
         upperBound = targetSpikes[:, np.newaxis] + window
@@ -418,6 +440,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                     self.muscleTableModel._data[ti][mi][2] = True
                     self.spikeDataModel._filters[ti][mi] = sos
                     self.muscleTableModel._data[ti][mi][3] = wnString
+        self.statusBar.showMessage('Applying filters to all trials', statusBarDisplayTime)
     
     def autosetThresholds(self):
         # Get which trial+muscles have been detected on
@@ -430,6 +453,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         for i in range(params.shape[0]):
             for j in range(params.shape[1]):
                 self.spikeDataModel._params[i][j] = avgparam[j]
+        self.statusBar.showMessage('Applying average thresholds to all trials', statusBarDisplayTime)
 
     def setNewTraces(self):
         # Update traces with new muscle names
@@ -814,8 +838,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             desiredChannelsPresent = [n for n in ['time', *self.muscleNames] if n in channelNames]
             inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
             datamat = file['data'][inds,:]
-            # Normalize time
-            datamat[:,0] -= datamat[-1,0]
+            # Normalize time (assumes time is first row)
+            datamat[0,:] -= datamat[0,-1]
         elif '.mat' in fname:
             file = scipy.io.loadmat(fname)
             matkeys = [s for s in file.keys()]
@@ -825,7 +849,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 desiredChannelsPresent = [n for n in ['time', *self.muscleNames] if n in channelNames]
                 inds = np.array([channelNames.index(n) for n in desiredChannelsPresent])
                 datamat = file['data'][:,inds]
-                # Normalize time
+                # Normalize time (assumes time is first col)
                 datamat[:,0] -= datamat[-1,0]
             # Pre-2022 DAQ program
             elif trial_name[0:-4] in matkeys:
